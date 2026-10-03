@@ -110,7 +110,7 @@
               <p class="text-sm font-medium text-slate-200">
                 Nhấp để chọn tệp video MP4 (hoặc chọn 10–20 video) hoặc kéo thả vào đây
               </p>
-              <p class="text-xs text-slate-500">Hỗ trợ chọn nhiều video cùng lúc &bull; Hệ thống tự động xếp hàng AI ngầm</p>
+              <p class="text-xs text-slate-500">Hỗ trợ chọn nhiều video cùng lúc &bull; Hệ thống tự động xếp hàng xử lý AI</p>
             </div>
             <div id="fileSelectedBadge" class="hidden mt-2 inline-flex items-center space-x-2 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-3 py-1 rounded-full text-xs font-mono">
               <span id="selectedFileName">video.mp4</span>
@@ -154,7 +154,7 @@
           disabled
           class="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-medium text-xs shadow-md transition disabled:opacity-40 disabled:pointer-events-none flex items-center space-x-1.5"
         >
-          🎬 Render hàng loạt (0 video sẵn sàng)
+          🎬 Nhúng hàng loạt (0 video sẵn sàng)
         </button>
       </div>
       <div id="batchQueueList" class="space-y-2.5 max-h-96 overflow-y-auto pr-1"></div>
@@ -171,7 +171,7 @@
       </div>
     </section>
 
-    <!-- PHASE 2: INTERACTIVE CUE CARDS EDITOR & LIVE PREVIEW (Revealed when ACTION_REQUIRED) -->
+    <!-- XEM TRƯỚC VIDEO & HIỆU ĐÍNH PHỤ ĐỀ (Revealed when ACTION_REQUIRED) -->
     <section id="srtEditorSection" class="bg-slate-900 border-2 border-indigo-500/40 rounded-2xl p-6 space-y-5 hidden shadow-2xl relative">
       <div class="flex items-center justify-between border-b border-slate-800 pb-4">
         <div class="flex items-center space-x-2">
@@ -504,6 +504,6 @@
   </div>
 
   <!-- JAVASCRIPT LOGIC -->
-  <script type="module" src="/js/app.js?v=2.6"></script>
+  <script type="module" src="/js/app.js?v=2.7"></script>
 </body>
 </html>

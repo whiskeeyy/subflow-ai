@@ -208,14 +208,14 @@ async def save_batch_task_srt(task_id: str, payload: dict):
 
 @app.post("/api/batch/render-task")
 async def render_single_batch_task(payload: dict):
-    """Renders hardsubs for a single batch task."""
+    """Kích hoạt nhúng phụ đề cho 1 tác vụ (non-blocking)."""
     task_id = payload.get("task_id")
     sub_style = payload.get("sub_style", {})
     if not task_id:
         raise HTTPException(status_code=400, detail="task_id không được để trống.")
     try:
-        res = await batch_manager.render_task(task_id, sub_style)
-        return res
+        task = batch_manager.trigger_render_task(task_id, sub_style)
+        return {"status": "success", "task": task, "message": "Đã bắt đầu nhúng phụ đề vào video."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

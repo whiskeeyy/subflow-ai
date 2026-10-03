@@ -10,6 +10,7 @@ import { initBatchQueue } from './batch.js';
 let cues = [];
 let originalAiSrt = '';
 let currentTaskId = '';
+let currentTaskTitle = '';
 let lastActiveCueId = null;
 let selectedFile = null;
 let lastOutputDir = '';
@@ -149,6 +150,7 @@ initHistoryDrawer();
 // --- Init Batch Queue ---
 function loadTaskIntoEditor({ taskId, srtContent, videoUrl, filename }) {
   currentTaskId = taskId;
+  currentTaskTitle = filename || taskId;
   originalAiSrt = srtContent;
   srtTextarea.value = srtContent;
   cues = parseSRT(srtContent);
@@ -161,9 +163,18 @@ function loadTaskIntoEditor({ taskId, srtContent, videoUrl, filename }) {
   srtEditorSection.classList.remove('hidden');
   resultCard.classList.add('hidden');
   srtEditorSection.scrollIntoView({ behavior: 'smooth' });
+  if (typeof setActiveEditorTaskId === 'function') {
+    setActiveEditorTaskId(taskId);
+  }
 }
 
-const { uploadBatchFiles, startPolling: startBatchPolling } = initBatchQueue({
+const {
+  uploadBatchFiles,
+  startPolling: startBatchPolling,
+  setActiveEditorTaskId,
+  getCurrentTasks,
+  fetchBatchStatus
+} = initBatchQueue({
   appendLog,
   loadTaskIntoEditor,
   subColorPicker,
@@ -186,7 +197,7 @@ window.addEventListener('pipeline:action_required', (e) => {
   }
   srtEditorSection.classList.remove('hidden');
   srtEditorSection.scrollIntoView({ behavior: 'smooth' });
-  appendLog(`[Phase 1 Hoàn tất] ${data.message}`, 'warn');
+  appendLog(`[Bóc tách hoàn tất] ${data.message}`, 'warn');
 });
 
 // --- History events ---
@@ -305,7 +316,7 @@ btnConfirmSrt.addEventListener('click', async () => {
     alert('Nội dung phụ đề không được để trống.');
     return;
   }
-  setSubmittingState(true);
+  
   const editedSrt = serializeCuesToSRT(cues);
   const previewHeight = previewVideoWrapper.clientHeight || 400;
   const fontPx = parseInt(subFontSizeSlider.value, 10);
@@ -318,15 +329,60 @@ btnConfirmSrt.addEventListener('click', async () => {
     margin_v: assMarginV,
     play_res_y: 1080
   };
-  appendLog(`Render phụ đề (${cues.length} câu) - Font: ${assFontSize}px, Lề: ${marginPercent}%...`, 'system');
-  updateProgress(80, 'Đang nhúng phụ đề bằng FFmpeg...');
-  try {
-    await sendPhase2(editedSrt, subStyle);
-  } catch(err) {
-    setSubmittingState(false);
-    appendLog(`Lỗi: ${err.message}`, 'error');
-    alert(`Đã xảy ra lỗi: ${err.message}`);
-    setProcessingState(false);
+
+  const allBatchTasks = typeof getCurrentTasks === 'function' ? getCurrentTasks() : [];
+  const isBatchTask = allBatchTasks.some(t => t.task_id === currentTaskId);
+
+  if (isBatchTask && currentTaskId) {
+    setSubmittingState(true);
+    appendLog(`Lưu kịch bản và bắt đầu nhúng phụ đề cho "${currentTaskTitle || currentTaskId}"...`, 'system');
+    try {
+      // 1. Lưu SRT đã sửa
+      await fetch(`/api/batch/task/${currentTaskId}/save-srt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ srt_content: editedSrt })
+      });
+
+      // 2. Kích hoạt lệnh nhúng (non-blocking)
+      const res = await fetch('/api/batch/render-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: currentTaskId, sub_style: subStyle })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Lỗi gửi lệnh nhúng');
+
+      appendLog(`Đã gửi lệnh nhúng phụ đề cho "${currentTaskTitle || currentTaskId}"! Video đang được xử lý trong danh sách hàng đợi.`, 'success');
+      
+      if (typeof fetchBatchStatus === 'function') fetchBatchStatus();
+
+      // Mở khóa nút bấm để user có thể tiếp tục thao tác
+      setSubmittingState(false, true);
+
+      // Gợi ý video tiếp theo nếu có video chờ duyệt
+      const nextWaiting = allBatchTasks.find(t => t.status === 'waiting_review' && t.task_id !== currentTaskId);
+      if (nextWaiting) {
+        appendLog(`Gợi ý: Video "${nextWaiting.filename}" đang chờ duyệt kịch bản. Bạn có thể bấm "Duyệt & Xem trước" ở trên để chỉnh sửa ngay!`, 'info');
+      }
+    } catch(err) {
+      setSubmittingState(false);
+      appendLog(`Lỗi: ${err.message}`, 'error');
+      alert(`Đã xảy ra lỗi: ${err.message}`);
+    }
+  } else {
+    // Single upload WebSocket flow
+    setSubmittingState(true);
+    appendLog(`Nhúng phụ đề (${cues.length} câu) - Font: ${assFontSize}px, Lề: ${marginPercent}%...`, 'system');
+    updateProgress(80, 'Đang nhúng phụ đề bằng FFmpeg...');
+    try {
+      await sendPhase2(editedSrt, subStyle);
+    } catch(err) {
+      setSubmittingState(false);
+      appendLog(`Lỗi: ${err.message}`, 'error');
+      alert(`Đã xảy ra lỗi: ${err.message}`);
+      setProcessingState(false);
+    }
   }
 });
 

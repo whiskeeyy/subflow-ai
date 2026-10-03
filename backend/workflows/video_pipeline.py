@@ -142,7 +142,7 @@ class VideoRepurposePipeline:
             self.state = PipelineState.ERROR
             await self.emit({
                 "status": "ERROR",
-                "message": f"Lỗi ở Phase 1: {str(e)}"
+                "message": f"Lỗi bóc tách & dịch thuật: {str(e)}"
             })
             raise
 
@@ -225,6 +225,6 @@ class VideoRepurposePipeline:
             self.state = PipelineState.ERROR
             await self.emit({
                 "status": "ERROR",
-                "message": f"Lỗi ở Phase 2: {str(e)}"
+                "message": f"Lỗi nhúng phụ đề: {str(e)}"
             })
             raise
