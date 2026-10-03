@@ -1,0 +1,40 @@
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0b0e14; }
+::-webkit-scrollbar-thumb { background: #262f40; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #3b475d; }
+
+/* History Drawer */
+#historyDrawer {
+  position: fixed;
+  top: 0; right: 0;
+  height: 100vh;
+  width: 360px;
+  background: #0f172a;
+  border-left: 1px solid #1e293b;
+  z-index: 200;
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -8px 0 32px rgba(0,0,0,0.5);
+}
+#historyDrawer.open {
+  transform: translateX(0);
+}
+#historyOverlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 199;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.3s;
+}
+#historyOverlay.open {
+  opacity: 1; pointer-events: auto;
+}
+.history-item {
+  transition: background 0.15s;
+}
+.history-item:hover {
+  background: #1e293b;
+}

@@ -1,0 +1,105 @@
+# ==========================================
+# SubFlow AI - Git Ignore Rules
+# ==========================================
+
+# --- Environment & Secrets ---
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.cert
+
+# --- Virtual Environments ---
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# --- Python Cache & Bytecode ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- Media & Processing Outputs (CRITICAL: Prevents committing huge video files) ---
+outputs/*
+!outputs/.gitkeep
+temp/
+tmp/
+*.mp4
+*.mp3
+*.wav
+*.mkv
+*.mov
+*.avi
+
+# --- Bundled Binaries (>100MB: GitHub hard block limit) ---
+ffmpeg_bin/
+*.exe
+!build_app.bat
+!run.bat
+
+# --- Model & AI Cache ---
+.cache/
+huggingface/
+models/
+*.bin
+*.onnx
+
+# --- PyInstaller Build Outputs ---
+*.manifest
+build/
+dist/
+
+# --- Logs & Diagnostics ---
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- IDEs & Code Editors ---
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# --- OS Generated Files ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# --- Scratch Scripts ---
+test_*.py
+scratch/
