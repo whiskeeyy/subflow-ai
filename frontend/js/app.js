@@ -181,17 +181,19 @@ window.addEventListener('pipeline:action_required', (e) => {
   cues = parsed;
   renderCueCards();
   updateSubOverlayStyle();
-  if (data.video_url) previewPlayer.src = data.video_url + \`?t=\${Date.now()}\`;
+  if (data.video_url) {
+    previewPlayer.src = `${data.video_url}?t=${Date.now()}`;
+  }
   srtEditorSection.classList.remove('hidden');
   srtEditorSection.scrollIntoView({ behavior: 'smooth' });
-  appendLog(\`[Phase 1 Hoàn tất] \${data.message}\`, 'warn');
+  appendLog(`[Phase 1 Hoàn tất] ${data.message}`, 'warn');
 });
 
 // --- History events ---
 window.addEventListener('history:view', (e) => {
   const { videoUrl, taskId } = e.detail;
   currentTaskId = taskId;
-  finalVideoPlayer.src = videoUrl + \`?t=\${Date.now()}\`;
+  finalVideoPlayer.src = `${videoUrl}?t=${Date.now()}`;
   btnDownloadFinalVideo.href = videoUrl;
   resultCard.classList.remove('hidden');
   resultCard.scrollIntoView({ behavior: 'smooth' });
@@ -208,24 +210,31 @@ window.addEventListener('history:edit', async (e) => {
     cues = parseSRT(srtText);
     renderCueCards();
     updateSubOverlayStyle();
-    if (videoUrl) previewPlayer.src = videoUrl + \`?t=\${Date.now()}\`;
+    if (videoUrl) {
+      previewPlayer.src = `${videoUrl}?t=${Date.now()}`;
+    }
     srtEditorSection.classList.remove('hidden');
     srtEditorSection.scrollIntoView({ behavior: 'smooth' });
     setSubmittingState(false, true);
-    appendLog(\`Đang chỉnh sửa lại dự án: \${taskId}\`, 'warn');
+    appendLog(`Đang chỉnh sửa lại dự án: ${taskId}`, 'warn');
   } catch(err) {
-    appendLog(\`Lỗi tải dự án: \${err.message}\`, 'error');
+    appendLog(`Lỗi tải dự án: ${err.message}`, 'error');
   }
 });
 
 // --- Dropzone ---
 dropzone.addEventListener('click', () => videoFileInput.click());
-dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('border-indigo-500', 'bg-indigo-500/5'); });
-dropzone.addEventListener('dragleave', () => dropzone.classList.remove('border-indigo-500', 'bg-indigo-500/5'));
+dropzone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropzone.classList.add('border-indigo-500', 'bg-indigo-500/5');
+});
+dropzone.addEventListener('dragleave', () => {
+  dropzone.classList.remove('border-indigo-500', 'bg-indigo-500/5');
+});
 dropzone.addEventListener('drop', (e) => {
   e.preventDefault();
   dropzone.classList.remove('border-indigo-500', 'bg-indigo-500/5');
-  if (e.dataTransfer.files?.length) {
+  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
     if (e.dataTransfer.files.length > 1) {
       uploadBatchFiles(e.dataTransfer.files);
     } else {
@@ -234,7 +243,7 @@ dropzone.addEventListener('drop', (e) => {
   }
 });
 videoFileInput.addEventListener('change', (e) => {
-  if (e.target.files?.length) {
+  if (e.target.files && e.target.files.length > 0) {
     if (e.target.files.length > 1) {
       uploadBatchFiles(e.target.files);
     } else {
@@ -251,31 +260,38 @@ function handleFileSelect(file) {
   selectedFile = file;
   const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
   selectedFileName.textContent = file.name;
-  selectedFileSize.textContent = \`(\${sizeMb} MB)\`;
+  selectedFileSize.textContent = `(${sizeMb} MB)`;
   fileSelectedBadge.classList.remove('hidden');
-  appendLog(\`Đã chọn: \${file.name} (\${sizeMb} MB)\`, 'info');
+  appendLog(`Đã chọn: ${file.name} (${sizeMb} MB)`, 'info');
 }
 
 // --- Start Pipeline ---
 btnStart.addEventListener('click', async () => {
-  if (!selectedFile) { alert('Vui lòng chọn tệp video trước!'); videoFileInput.click(); return; }
+  if (!selectedFile) {
+    alert('Vui lòng chọn tệp video trước!');
+    videoFileInput.click();
+    return;
+  }
   setProcessingState(true);
   updateProgress(5, 'Đang tải lên máy chủ...');
   srtEditorSection.classList.add('hidden');
   resultCard.classList.add('hidden');
-  appendLog(\`Bắt đầu tải: \${selectedFile.name}...\`, 'system');
+  appendLog(`Bắt đầu tải: ${selectedFile.name}...`, 'system');
   try {
     const fd = new FormData();
     fd.append('file', selectedFile);
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
-    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Upload thất bại'); }
+    if (!res.ok) {
+      const e = await res.json();
+      throw new Error(e.detail || 'Upload thất bại');
+    }
     const { task_id } = await res.json();
-    appendLog(\`Upload thành công! Task: \${task_id}\`, 'success');
+    appendLog(`Upload thành công! Task: ${task_id}`, 'success');
     updateProgress(10, 'Video đã lưu. Bắt đầu pipeline...');
     connectWebSocket(task_id);
   } catch(err) {
-    appendLog(\`Lỗi upload: \${err.message}\`, 'error');
-    alert(\`Lỗi: \${err.message}\`);
+    appendLog(`Lỗi upload: ${err.message}`, 'error');
+    alert(`Lỗi: ${err.message}`);
     setProcessingState(false);
     updateConnectionStatus('ready');
   }
@@ -285,7 +301,10 @@ btnStart.addEventListener('click', async () => {
 btnConfirmSrt.addEventListener('click', async () => {
   if (btnConfirmSrt.disabled) return;
   if (getIsRawMode()) cues = parseSRT(srtTextarea.value);
-  if (!cues.length) { alert('Nội dung phụ đề không được để trống.'); return; }
+  if (!cues.length) {
+    alert('Nội dung phụ đề không được để trống.');
+    return;
+  }
   setSubmittingState(true);
   const editedSrt = serializeCuesToSRT(cues);
   const previewHeight = previewVideoWrapper.clientHeight || 400;
@@ -293,15 +312,20 @@ btnConfirmSrt.addEventListener('click', async () => {
   const marginPercent = parseInt(subMarginVSlider.value, 10);
   const assFontSize = Math.max(16, Math.round(fontPx * (1080 / previewHeight)));
   const assMarginV = Math.round(1080 * (marginPercent / 100));
-  const subStyle = { color_bgr: hexToAssBgr(subColorPicker.value), font_size: assFontSize, margin_v: assMarginV, play_res_y: 1080 };
-  appendLog(\`Render phụ đề (\${cues.length} câu) - Font: \${assFontSize}px, Lề: \${marginPercent}%...\`, 'system');
+  const subStyle = {
+    color_bgr: hexToAssBgr(subColorPicker.value),
+    font_size: assFontSize,
+    margin_v: assMarginV,
+    play_res_y: 1080
+  };
+  appendLog(`Render phụ đề (${cues.length} câu) - Font: ${assFontSize}px, Lề: ${marginPercent}%...`, 'system');
   updateProgress(80, 'Đang nhúng phụ đề bằng FFmpeg...');
   try {
     await sendPhase2(editedSrt, subStyle);
   } catch(err) {
     setSubmittingState(false);
-    appendLog(\`Lỗi: \${err.message}\`, 'error');
-    alert(\`Đã xảy ra lỗi: \${err.message}\`);
+    appendLog(`Lỗi: ${err.message}`, 'error');
+    alert(`Đã xảy ra lỗi: ${err.message}`);
     setProcessingState(false);
   }
 });
@@ -318,10 +342,12 @@ btnBackToEditor.addEventListener('click', () => {
 btnOpenFolder.addEventListener('click', async () => {
   if (!lastOutputDir) return;
   try {
-    const res = await fetch(\`/api/open-folder?path=\${encodeURIComponent(lastOutputDir)}\`);
+    const res = await fetch(`/api/open-folder?path=${encodeURIComponent(lastOutputDir)}`);
     if (!res.ok) throw new Error((await res.json()).detail);
-    appendLog(\`Đã mở thư mục: \${lastOutputDir}\`, 'success');
-  } catch(err) { appendLog(\`Lỗi: \${err.message}\`, 'error'); }
+    appendLog(`Đã mở thư mục: ${lastOutputDir}`, 'success');
+  } catch(err) {
+    appendLog(`Lỗi: ${err.message}`, 'error');
+  }
 });
 
 // --- Clear Logs ---
