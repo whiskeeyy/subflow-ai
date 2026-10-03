@@ -6,14 +6,14 @@ Tài liệu này cung cấp chi tiết về giao thức kết nối, các điể
 
 ## 1. REST Endpoints
 
-### 1.1. Upload Video
+### 1.1. Upload Video Đơn Lẻ
 Tiếp nhận tệp video từ máy tính của người dùng và lưu trữ vào thư mục tác vụ mới.
 
 - **URL**: `/api/upload`
 - **Phương thức**: `POST`
 - **Content-Type**: `multipart/form-data`
 - **Tham số Request**:
-  - `file`: Tệp video (hỗ trợ `.mp4`, `.mov`, `.mkv`, kích thước tối đa tùy thuộc vào dung lượng ổ đĩa).
+  - `file`: Tệp video (hỗ trợ `.mp4`, `.mov`, `.mkv`).
 
 - **Phản hồi thành công (`200 OK`)**:
   ```json
@@ -24,13 +24,178 @@ Tiếp nhận tệp video từ máy tính của người dùng và lưu trữ v�
   }
   ```
 
-- **Mã lỗi**:
-  - `400 Bad Request`: Không có tệp đính kèm hoặc tên tệp không hợp lệ.
-  - `500 Internal Server Error`: Không thể ghi tệp vào đĩa cứng.
+---
+
+### 1.2. Upload Video Hàng Loạt (Batch Upload)
+Tiếp nhận nhiều tệp video cùng lúc và tự động đưa vào hàng đợi xử lý bóc tách & dịch thuật AI.
+
+- **URL**: `/api/batch/upload`
+- **Phương thức**: `POST`
+- **Content-Type**: `multipart/form-data`
+- **Tham số Request**:
+  - `files`: Danh sách các tệp video.
+
+- **Phản hồi thành công (`200 OK`)**:
+  ```json
+  {
+    "status": "success",
+    "enqueued_count": 5,
+    "tasks": [
+      {
+        "task_id": "task_1a2b3c4d",
+        "filename": "video_01.mp4",
+        "status": "pending",
+        "percent": 0,
+        "message": "Đang xếp hàng chờ xử lý AI..."
+      }
+    ]
+  }
+  ```
 
 ---
 
-### 1.2. Mở Thư Mục Cục Bộ
+### 1.3. Lấy Trạng Thái Hàng Đợi (Batch Status)
+Truy vấn trạng thái và tiến độ xử lý của tất cả các video trong hàng đợi theo thời gian thực.
+
+- **URL**: `/api/batch/status`
+- **Phương thức**: `GET`
+
+- **Phản hồi thành công (`200 OK`)**:
+  ```json
+  [
+    {
+      "task_id": "task_1a2b3c4d",
+      "filename": "video_01.mp4",
+      "status": "waiting_review",
+      "percent": 75,
+      "message": "Đã dịch xong. Chờ duyệt kịch bản!",
+      "video_url": "/outputs/task_1a2b3c4d/video_goc.mp4",
+      "srt_url": "/outputs/task_1a2b3c4d/sub_viet.srt",
+      "final_video_url": "/outputs/task_1a2b3c4d/final_video.mp4"
+    },
+    {
+      "task_id": "task_2e3f4g5h",
+      "filename": "video_02.mp4",
+      "status": "rendering",
+      "percent": 85,
+      "message": "Đang nhúng phụ đề bằng FFmpeg..."
+    }
+  ]
+  ```
+
+---
+
+### 1.4. Lấy Chi Tiết Kịch Bản Tác Vụ
+Nạp nội dung phụ đề SRT và video của một tác vụ cụ thể để hiển thị lên trình biên tập.
+
+- **URL**: `/api/batch/task/{task_id}`
+- **Phương thức**: `GET`
+
+- **Phản hồi thành công (`200 OK`)**:
+  ```json
+  {
+    "task": { "task_id": "task_1a2b3c4d", "filename": "video_01.mp4" },
+    "srt_content": "1\n00:00:00,000 --> 00:00:01,280\nTên tôi là YT\n\n...",
+    "video_url": "/outputs/task_1a2b3c4d/video_goc.mp4",
+    "final_video_url": null
+  }
+  ```
+
+---
+
+### 1.5. Lưu Kịch Bản Đã Hiệu Đính
+Ghi đè nội dung phụ đề sau khi người dùng chỉnh sửa trên bộ thẻ Cue Cards hoặc mã nguồn SRT.
+
+- **URL**: `/api/batch/task/{task_id}/save-srt`
+- **Phương thức**: `POST`
+- **Content-Type**: `application/json`
+- **Request Body**:
+  ```json
+  {
+    "srt_content": "1\n00:00:00,000 --> 00:00:01,280\nNội dung đã chỉnh sửa..."
+  }
+  ```
+
+---
+
+### 1.6. Kích Hoạt Nhúng Phụ Đề Đơn Lẻ (Non-blocking)
+Khởi chạy tiến trình FFmpeg nhúng phụ đề cho một video cụ thể dưới dạng tác vụ chạy ngầm độc lập (không gây nghẽn trình duyệt hay khóa UI).
+
+- **URL**: `/api/batch/render-task`
+- **Phương thức**: `POST`
+- **Content-Type**: `application/json`
+- **Request Body**:
+  ```json
+  {
+    "task_id": "task_1a2b3c4d",
+    "sub_style": {
+      "color_bgr": "&H0000FFFF&",
+      "font_size": 20,
+      "margin_v": 140,
+      "play_res_y": 1080
+    }
+  }
+  ```
+
+- **Phản hồi thành công (`200 OK`)**:
+  ```json
+  {
+    "status": "success",
+    "message": "Đã bắt đầu nhúng phụ đề vào video.",
+    "task": {
+      "task_id": "task_1a2b3c4d",
+      "status": "rendering",
+      "percent": 80,
+      "message": "Đang chuẩn bị nhúng phụ đề..."
+    }
+  }
+  ```
+
+---
+
+### 1.7. Kích Hoạt Nhúng Hàng Loạt (Batch Render All)
+Nhúng phụ đề đồng thời cho toàn bộ các video đang ở trạng thái `waiting_review` (đã duyệt kịch bản).
+
+- **URL**: `/api/batch/render-all`
+- **Phương thức**: `POST`
+- **Request Body**:
+  ```json
+  {
+    "sub_style": {
+      "color_bgr": "&H0000FFFF&",
+      "font_size": 20,
+      "margin_v": 140
+    }
+  }
+  ```
+
+---
+
+### 1.8. Lịch Sử Dự Án (Project History)
+Lấy danh sách các video đã thực hiện trong 30 ngày gần nhất để hiển thị trên History Drawer.
+
+- **URL**: `/api/history`
+- **Phương thức**: `GET`
+
+- **Phản hồi thành công (`200 OK`)**:
+  ```json
+  [
+    {
+      "task_id": "task_1a2b3c4d",
+      "filename": "video_sample.mp4",
+      "status": "done",
+      "date": "Hôm nay",
+      "time": "14:32:05",
+      "video_url": "/outputs/task_1a2b3c4d/video_goc.mp4",
+      "srt_url": "/outputs/task_1a2b3c4d/sub_viet.srt",
+      "final_video_url": "/outputs/task_1a2b3c4d/final_video.mp4"
+    }
+  ]
+  ```
+
+---
+
+### 1.9. Mở Thư Mục Cục Bộ
 Kích hoạt trình quản lý tệp gốc của hệ điều hành (Windows Explorer, macOS Finder, Linux xdg-open) để mở thư mục thành phẩm.
 
 - **URL**: `/api/open-folder`
@@ -38,34 +203,11 @@ Kích hoạt trình quản lý tệp gốc của hệ điều hành (Windows Exp
 - **Query Parameters**:
   - `path`: Đường dẫn tuyệt đối đến thư mục cần mở (bắt buộc phải nằm trong thư mục `outputs/`).
 
-- **Phản hồi thành công (`200 OK`)**:
-  ```json
-  {
-    "status": "success",
-    "message": "Đã mở thư mục: D:\\DVRT\\outputs\\task_a1b2c3d4"
-  }
-  ```
-
-- **Mã lỗi**:
-  - `400 Bad Request`: Đường dẫn không hợp lệ hoặc cố tình truy cập ngoài phạm vi thư mục cho phép (Path Traversal Protection).
-  - `500 Internal Server Error`: Lỗi khởi chạy ứng dụng thám hiểm tệp.
-
----
-
-### 1.3. Phục Vụ Tệp Tĩnh (Static Files)
-Hệ thống gắn kết trực tiếp thư mục `outputs/` để hỗ trợ trình duyệt phát video và tải file:
-
-- **URL Pattern**: `/outputs/{task_id}/{file_name}`
-- **Ví dụ**:
-  - Video gốc: `/outputs/task_a1b2c3d4/video_goc.mp4`
-  - Phụ đề SRT: `/outputs/task_a1b2c3d4/sub_viet.srt`
-  - Video hoàn chỉnh: `/outputs/task_a1b2c3d4/final_video.mp4`
-
 ---
 
 ## 2. Giao Thức WebSocket (`/ws/process`)
 
-Quy trình xử lý hai giai đoạn (Human-in-the-loop) giao tiếp thời gian thực qua giao thức WebSocket hai chiều.
+Quy trình xử lý tương tác thời gian thực (Human-in-the-loop) đối với chế độ upload video đơn lẻ.
 
 - **URL**: `ws://<host>:<port>/ws/process` hoặc `wss://...`
 
@@ -74,17 +216,17 @@ Client                                      Server
   │                                           │
   ├─── 1. Kết nối & Gửi Init Payload ────────►│
   │    { "task_id": "task_..." }              │
-  │                                           ├─── Phase 1: Bóc sub & dịch
+  │                                           ├─── Bóc tách âm thanh & dịch thuật
   │◄── 2. Phát PROGRESS (20%, 50%, 75%) ──────┤
   │                                           │
-  │◄── 3. Phát ACTION_REQUIRED ───────────────┤ (Tạm dừng)
+  │◄── 3. Phát ACTION_REQUIRED ───────────────┤ (Tạm dừng chờ người dùng)
   │    { srt_content, video_url }             │
   │                                           │
   │    (Người dùng xem preview & chỉnh sửa)   │
   │                                           │
   ├─── 4. Gửi RESUME_WITH_SCRIPT ────────────►│
   │    { edited_srt, sub_style }              │
-  │                                           ├─── Phase 2: Burn phụ đề FFmpeg
+  │                                           ├─── Nhúng phụ đề bằng FFmpeg
   │◄── 5. Phát PROGRESS (90%) ────────────────┤
   │                                           │
   │◄── 6. Phát SUCCESS (final_video.mp4) ─────┤
@@ -96,19 +238,17 @@ Client                                      Server
 ### 2.1. Thông Điệp từ Client gửi lên Server
 
 #### A. Khởi tạo quy trình (Init)
-Gửi ngay sau khi thiết lập kết nối WebSocket thành công:
 ```json
 {
   "task_id": "task_a1b2c3d4"
 }
 ```
 
-#### B. Xác nhận & Tiếp tục Phase 2 (Resume With Script)
-Gửi khi người dùng đã duyệt xong kịch bản phụ đề và tùy biến style:
+#### B. Xác nhận & Nhúng Phụ Đề (Resume With Script)
 ```json
 {
   "action": "RESUME_WITH_SCRIPT",
-  "edited_srt": "1\n00:00:00,000 --> 00:00:01,280\nTên tôi là YT\n\n2\n00:00:03,320 --> 00:00:04,100\nỞ trên tòa nhà...",
+  "edited_srt": "1\n00:00:00,000 --> 00:00:01,280\nTên tôi là YT\n\n...",
   "sub_style": {
     "color_bgr": "&H0000FFFF&",
     "font_size": 20,
@@ -133,17 +273,14 @@ Gửi khi người dùng đã duyệt xong kịch bản phụ đề và tùy bi�
 {
   "status": "PROGRESS",
   "percent": 50,
-  "step": "TRANSCRIBE",
-  "message": "Đang gọi faster-whisper cục bộ để bóc tách lời thoại tiếng Trung và tạo mốc thời gian SRT..."
+  "message": "Đang gọi faster-whisper cục bộ để bóc tách lời thoại và tạo mốc thời gian SRT..."
 }
 ```
 
-#### B. Yêu cầu người dùng can thiệp (ACTION_REQUIRED)
-Kích hoạt giai đoạn Human Review và nạp video vào Live Preview Player:
+#### B. Yêu cầu duyệt kịch bản (ACTION_REQUIRED)
 ```json
 {
   "status": "ACTION_REQUIRED",
-  "action": "EDIT_SCRIPT",
   "task_id": "task_a1b2c3d4",
   "srt_content": "1\n00:00:00,000 --> 00:00:01,280\nTên tôi là YT\n\n...",
   "video_url": "/outputs/task_a1b2c3d4/video_goc.mp4",
@@ -151,31 +288,13 @@ Kích hoạt giai đoạn Human Review và nạp video vào Live Preview Player:
 }
 ```
 
-#### C. Hoàn tất thành công (SUCCESS)
+#### C. Hoàn tất tác vụ (SUCCESS)
 ```json
 {
   "status": "SUCCESS",
   "task_id": "task_a1b2c3d4",
-  "output_dir": "D:\\DVRT\\outputs\\task_a1b2c3d4",
-  "files": {
-    "video_goc": "D:\\DVRT\\outputs\\task_a1b2c3d4\\video_goc.mp4",
-    "sub_viet": "D:\\DVRT\\outputs\\task_a1b2c3d4\\sub_viet.srt",
-    "final_video": "D:\\DVRT\\outputs\\task_a1b2c3d4\\final_video.mp4"
-  },
-  "relative_paths": {
-    "final_video": "/outputs/task_a1b2c3d4/final_video.mp4",
-    "video": "/outputs/task_a1b2c3d4/video_goc.mp4",
-    "sub_viet": "/outputs/task_a1b2c3d4/sub_viet.srt"
-  },
   "video_url": "/outputs/task_a1b2c3d4/final_video.mp4",
-  "message": "Nhúng phụ đề vào video hoàn tất thành công! Đã giữ nguyên 100% âm thanh gốc."
-}
-```
-
-#### D. Báo lỗi (ERROR)
-```json
-{
-  "status": "ERROR",
-  "message": "Lỗi ở Phase 2: FFmpeg render video thất bại: ..."
+  "output_dir": "D:\\DVRT\\outputs\\task_a1b2c3d4",
+  "message": "Hoàn tất nhúng phụ đề vào video!"
 }
 ```

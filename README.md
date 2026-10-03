@@ -31,10 +31,12 @@ Hệ thống loại bỏ hoàn toàn quy trình thủ công phức tạp (phải
 | :--- | :--- | :--- |
 | **Bóc Sub Cục Bộ (Local STT)** | Sử dụng `faster-whisper` (`base` model, lượng tử hóa `int8` CPU). | **100% Miễn phí**, bảo mật tuyệt đối, không tốn chi phí API và không giới hạn độ dài video. |
 | **Dịch Thuật Bảo Toàn Timestamp** | Google Translate Engine đa luồng (`ThreadPoolExecutor`). | Tốc độ dịch chỉ **1-2 giây**, bảo toàn 100% mốc thời gian millisecond `00:00:00,000`, không bao giờ lệch câu. |
-| **Interactive Live Subtitle Preview** | Video Player HTML5 đồng bộ trực tiếp với parser SRT client-side qua sự kiện `timeupdate`. | Cho phép xem trước chính xác phụ đề nhảy theo giây trên video trước khi bấm render. |
+| **Interactive Live Subtitle Preview** | Video Player HTML5 đồng bộ trực tiếp với parser SRT client-side qua sự kiện `timeupdate`. | Cho phép xem trước chính xác phụ đề nhảy theo giây trên video trước khi bấm nhúng. |
+| **Bộ Thẻ Biên Tập Tương Tác (Cue Cards)** | Thẻ câu tương tác: `➕ Thêm` (tự tính gap & tịnh tiến câu), `➕ Thêm ở đầu`, `✂️ Tách`, `🔗 Gộp`, `🗑️ Xóa`. | Tự động nhảy mốc và **tạm dừng video (pause)** để soi khẩu hình; sửa thời gian trực tiếp `↑`/`↓` (`±0.1s`). |
+| **Hàng Đợi & Nhúng Độc Lập (Non-blocking)** | Render FFmpeg chạy bất đồng bộ với cơ chế khóa `asyncio.Lock` chống xung đột phần cứng. | **Không bao giờ làm nghẽn Editor**: có thể chuyển sang duyệt video khác trong khi video trước đang được nhúng. |
 | **Tùy Biến Phụ Đề WYSIWYG** | Color Picker (#RRGGBB $\rightarrow$ ASS BGR), Font Size Slider (14-32px), MarginV (40-260px). | Thay đổi màu sắc, kích thước và vị trí lề đáy phụ đề hiển thị ngay lập tức trên video preview. |
 | **Hardsub Siêu Tốc & Giữ Âm Gốc** | FFmpeg filter `subtitles` + sao chép luồng trực tiếp (`-c:a copy`). | Giữ nguyên 100% chất lượng âm thanh gốc, tăng tốc GPU `h264_nvenc` (tự động fallback `libx264`). |
-| **Kiến Trúc Hai Giai Đoạn (HITL)** | WebSocket State Machine hai chiều với trạng thái `ACTION_REQUIRED`. | Người dùng luôn nắm quyền kiểm soát và hiệu đính câu chữ trước khi xuất file. |
+| **Kiểm Soát Người Dùng (HITL)** | WebSocket State Machine hai chiều với trạng thái `ACTION_REQUIRED`. | Người dùng luôn nắm quyền kiểm soát và hiệu đính câu chữ trước khi xuất file. |
 
 ---
 
@@ -42,18 +44,18 @@ Hệ thống loại bỏ hoàn toàn quy trình thủ công phức tạp (phải
 
 ```mermaid
 flowchart TD
-    subgraph Client ["Frontend (Vanilla JS + Tailwind CSS)"]
-        UI_Upload["Tải lên MP4 (Drag & Drop)"]
-        UI_WS["Kết nối WebSocket (/ws/process)"]
-        UI_Preview["Live Preview: Video + Subtitle Overlay"]
-        UI_Controls["Tùy chỉnh: Màu chữ / Font Size / MarginV"]
-        UI_Confirm["Xác nhận & Nhúng Phụ Đề (Phase 2)"]
+    subgraph Client ["Frontend (Vanilla JS Modules + Tailwind CSS)"]
+        UI_Upload["Tải lên MP4 (Đơn lẻ hoặc Hàng loạt)"]
+        UI_Queue["Hàng đợi tác vụ (Status trực quan)"]
+        UI_Preview["Live Preview: Video Player + Subtitle Overlay"]
+        UI_Editor["Bộ thẻ Interactive Cue Cards (Sửa time, Thêm, Tách, Gộp, Xóa)"]
+        UI_Confirm["Xác nhận & Nhúng Phụ Đề"]
         UI_Result["Trình phát Video Hoàn Chỉnh + Download"]
     end
 
-    subgraph Server ["Backend (FastAPI + Async Worker)"]
-        API_Upload["POST /api/upload"]
-        WS_Router["WebSocket Router"]
+    subgraph Server ["Backend (FastAPI + Async Batch Manager)"]
+        API_Upload["POST /api/upload & /api/batch/upload"]
+        BM["BatchManager (Hàng đợi ngầm & Render Lock)"]
         WF["SubFlow State Machine (VideoRepurposePipeline)"]
     end
 
@@ -64,14 +66,15 @@ flowchart TD
         T_Burn["merge_task.py (FFmpeg Burn Sub + -c:a copy)"]
     end
 
-    UI_Upload --> API_Upload --> WF
-    UI_WS <--> WS_Router <--> WF
+    UI_Upload --> API_Upload --> BM
+    BM --> WF
     WF --> T_Extract --> T_STT --> T_Trans
-    T_Trans -- "ACTION_REQUIRED (srt + video_url)" --> UI_Preview
-    UI_Preview --> UI_Controls --> UI_Confirm
-    UI_Confirm -- "RESUME_WITH_SCRIPT (edited_srt + style)" --> WF
-    WF --> T_Burn
-    T_Burn -- "SUCCESS (final_video.mp4)" --> UI_Result
+    T_Trans -- "Sẵn sàng duyệt (srt + video_url)" --> UI_Queue
+    UI_Queue -- "Chọn duyệt" --> UI_Preview & UI_Editor
+    UI_Editor --> UI_Confirm
+    UI_Confirm -- "Gửi lệnh nhúng (Non-blocking)" --> BM
+    BM --> T_Burn
+    T_Burn -- "Hoàn thành (final_video.mp4)" --> UI_Result & UI_Queue
 ```
 
 ---
@@ -185,27 +188,33 @@ Sau khi server khởi động thành công, mở trình duyệt tại:
 
 ## 🔄 Quy Trình Vận Hành (Human-in-the-Loop Pipeline)
 
-### Giai đoạn 1: Chuẩn bị & Dịch Tự Động (Prepare Phase)
-1. **Tải video lên**: Kéo thả tệp video `.mp4` vào khung upload và bấm **"Bắt đầu chuyển đổi & bóc phụ đề"**.
+### 1. Bóc Tách & Dịch Thuật Tự Động
+1. **Tải video lên**: Kéo thả tệp video `.mp4` vào khung upload và bấm **"Bắt đầu chuyển đổi & bóc phụ đề"** (hoặc chọn nhiều video để đưa vào hàng đợi).
 2. **Trích xuất Audio (20%)**: FFmpeg bóc tách luồng âm thanh gốc thành `audio_goc.mp3`.
 3. **Bóc phụ đề AI (50%)**: `faster-whisper` nhận dạng giọng nói tiếng Trung và xuất ra file phụ đề chuẩn SRT `sub_chinese.srt` kèm mốc thời gian chính xác đến millisecond.
 4. **Dịch tiếng Việt (75%)**: Hệ thống phân tách từng block SRT, dịch phần văn bản sang tiếng Việt và ghép lại đúng mốc thời gian vào `sub_viet_raw.srt`.
 5. **Kích hoạt Live Preview**: Server phát sự kiện WebSocket `ACTION_REQUIRED` kèm URL video gốc và nội dung SRT.
 
-### Giai đoạn 2: Xem Trước Tương Tác & Xuất Bản (Review & Hardsub Phase)
+### 2. Xem Trước Tương Tác & Hiệu Đính Phụ Đề (Interactive Cue Cards)
 1. **Interactive Preview Player**:
-   - Trình phát video bên trái tự động tải video gốc.
+   - Trình phát video bên trái tự động nạp video gốc.
    - Khi bấm **Play**, phụ đề tương ứng với giây hiện tại sẽ tự động hiển thị mượt mà trên khung video (`#subOverlay`).
-2. **Hiệu đính kịch bản**: Người dùng chỉnh sửa câu từ, thêm bớt từ ngữ địa phương trên khung soạn thảo bên phải (hệ thống tự động cập nhật ngay trên video preview).
+   - **Click vào thẻ bất kỳ**: Video nhảy đến thời gian đầu câu và **tự động TẠM DỪNG (PAUSE)** để soi khung hình / khẩu hình.
+2. **Bộ thẻ phụ đề thông minh**:
+   - **`➕ Thêm`**: Chèn câu rỗng ngay sau câu đang chọn (tự động lấp khoảng trống hoặc tịnh tiến các câu sau để tránh đè thời gian; tự động focus con trỏ văn bản).
+   - **`➕ Thêm ở đầu`**: Thêm một câu rỗng trước câu #1 (tại `00:00.000`).
+   - **`✂️ Tách` & `🔗 Gộp`**: Chia đôi một câu dài hoặc gộp 2 câu liền kề.
+   - **`🗑️ Xóa`**: Loại bỏ câu phụ đề thừa.
+   - **Sửa thời gian trực tiếp**: Nhập số hoặc bấm phím `↑`/`↓` để tăng/giảm nhanh `±0.1s`.
 3. **Tùy biến Style**:
    - **Màu chữ**: Chọn màu sắc (mặc định Vàng Neon `#FFFF00` chuẩn phong cách video viral).
    - **Cỡ chữ**: Thanh kéo từ `14px` đến `32px` (mặc định `20px`).
    - **Lề đáy (MarginV)**: Thanh kéo từ `40px` đến `260px` (mặc định `140px` - vị trí tối ưu trên TikTok/Reels để không bị che bởi thanh mô tả và âm nhạc).
-4. **Xác nhận (Phase 2)**: Nhấn nút **"🎬 Xác nhận & Nhúng phụ đề vào Video"**.
-5. **Render Video Hoàn Chỉnh (100%)**:
-   - FFmpeg nhúng trực tiếp phụ đề với style đã chọn vào video.
-   - Luồng âm thanh gốc được sao chép nguyên bản (`-c:a copy`), không làm giảm chất lượng âm thanh.
-   - Thẻ kết quả hiển thị trình phát video hoàn chỉnh, nút **"Tải video về máy"** (`final_video.mp4`) và nút **"Mở thư mục"**.
+4. **Xác nhận & Nhúng**: Nhấn nút **"🎬 Xác nhận & Nhúng phụ đề vào Video"**.
+5. **Nhúng Độc Lập & Không Chặn (Non-blocking)**:
+   - FFmpeg nhúng phụ đề trong nền với GPU `h264_nvenc` hoặc CPU `libx264`.
+   - Luồng âm thanh gốc được sao chép nguyên bản (`-c:a copy`), bảo toàn 100% chất lượng âm thanh.
+   - **Không làm nghẽn Editor**: Bạn có thể chuyển sang duyệt video khác trong hàng đợi ngay lập tức trong khi video trước đang được nhúng.
 
 ---
 
@@ -219,17 +228,24 @@ SubFlow AI có thể được đóng gói thành một file ứng dụng Windows
   ```text
   dist\SubFlowAI\SubFlowAI.exe
   ```
-  Ứng dụng sẽ tự động kích hoạt server ngầm và mở trình duyệt mặc định trên máy tính của bạn.
+  Ứng dụng sẽ tự động kích hoạt server và mở trình duyệt mặc định trên máy tính của bạn.
 
 ---
 
-## ⚡ Tính Năng Mở Rộng Mới
+## ⚡ Tính Năng Mở Rộng
 
-### 1. Hàng Đợi Sản Xuất Hàng Loạt (Batch Processing Queue)
-- **Kéo thả 10–20 video:** Chọn hoặc kéo thả cùng lúc nhiều tệp `.mp4` vào khung tải lên.
-- **Hàng đợi ngầm tuần tự:** Hệ thống xếp hàng tự động chạy Phase 1 (bóc sub & dịch) ngầm, bảo đảm không tràn RAM/GPU.
+### 1. Hàng Đợi Xử Lý Hàng Loạt & Nhúng Độc Lập (Batch Queue & Non-blocking Render)
+- **Kéo thả 10–20 video:** Chọn cùng lúc nhiều tệp `.mp4` vào khung tải lên.
+- **Xử lý AI tuần tự:** Hệ thống xếp hàng tự động bóc tách & dịch thuật, bảo đảm không tràn RAM/GPU.
+- **Trạng thái chi tiết theo thời gian thực:**
+  - 🕒 `Chờ xếp hàng`
+  - ⚡ `Đang xử lý AI (XX%)`
+  - 📝 `Chờ duyệt kịch bản`
+  - ✏️ `Đang chỉnh sửa` (highlight viền xanh trên thẻ đang mở trong Editor)
+  - 🎬 `Đang nhúng phụ đề...` (FFmpeg đang xử lý độc lập)
+  - ✅ `Hoàn thành 100%` (nút `▶ Xem`, `📥 Tải` và `✏️ Sửa`)
 - **Duyệt kịch bản linh hoạt:** Nhấp vào từng video trong hàng đợi để mở bộ thẻ phụ đề và xem trước.
-- **Render hàng loạt:** Bấm **"🎬 Render hàng loạt"** để xuất bản tất cả video đã duyệt trong lúc làm việc khác.
+- **Nhúng hàng loạt:** Bấm **"🎬 Nhúng hàng loạt"** để xuất bản tất cả video đã duyệt kịch bản.
 
 ### 2. Thư Viện Dự Án / Lịch Sử (Project History Drawer)
 - Nhấp nút **"Lịch sử"** ở thanh điều hướng trên cùng để mở Drawer trượt ra từ bên phải.
