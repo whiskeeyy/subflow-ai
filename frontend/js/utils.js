@@ -6,9 +6,14 @@ export function pad(num, size = 2) {
 }
 
 export function timeStringToSeconds(tStr) {
+  if (!tStr) return 0;
   const parts = tStr.trim().replace(',', '.').split(':');
   if (parts.length === 3) {
     return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]);
+  } else if (parts.length === 2) {
+    return parseFloat(parts[0]) * 60 + parseFloat(parts[1]);
+  } else if (parts.length === 1) {
+    return parseFloat(parts[0]) || 0;
   }
   return 0;
 }
