@@ -27,6 +27,7 @@ from backend.settings_manager import settings_manager, diagnose_system
 from backend.workflows.video_pipeline import VideoRepurposePipeline
 from backend.tasks.merge_task import burn_subtitles_to_video
 from backend.batch_manager import batch_manager
+from backend.model_downloader import model_downloader
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("backend.app")
@@ -316,6 +317,65 @@ async def reset_settings_endpoint():
         }
     except Exception as e:
         logger.error(f"Error resetting settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Offline Model Downloader & Management Endpoints
+# ---------------------------------------------------------------------------
+@app.get("/api/models")
+async def get_models():
+    """
+    Returns the list of supported Faster-Whisper models, their sizes,
+    local installation status, and active default flag.
+    """
+    return model_downloader.get_all_models()
+
+
+@app.post("/api/models/download")
+async def download_model(payload: dict):
+    """
+    Triggers downloading a Faster-Whisper model in a background daemon thread.
+    Payload: {"model_id": "base"}
+    """
+    model_id = payload.get("model_id", "").strip().lower()
+    if not model_id:
+        raise HTTPException(status_code=400, detail="model_id không được để trống.")
+    try:
+        res = model_downloader.start_download(model_id)
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except RuntimeError as re:
+        raise HTTPException(status_code=409, detail=str(re))
+    except Exception as e:
+        logger.error(f"Lỗi khi bắt đầu tải mô hình: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/models/progress")
+async def get_model_progress():
+    """
+    Returns the live progress snapshot of the active model download.
+    """
+    return model_downloader.get_progress()
+
+
+@app.delete("/api/models/{model_id}")
+async def delete_model(model_id: str, force: bool = False):
+    """
+    Safely removes a downloaded model folder from disk.
+    Rejects deletion if model is the current default unless force=True.
+    """
+    try:
+        model_downloader.delete_model(model_id, force=force)
+        return {"status": "deleted", "model_id": model_id}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except FileNotFoundError as fe:
+        raise HTTPException(status_code=404, detail=str(fe))
+    except Exception as e:
+        logger.error(f"Lỗi khi xóa mô hình {model_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

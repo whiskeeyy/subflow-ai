@@ -100,22 +100,14 @@ function populateSettingsForm(settings, diag) {
   if (cleanSourceCb) cleanSourceCb.checked = Boolean(settings.storage?.auto_cleanup_source_video);
 
   // 2. AI Model & Language
-  const modelSelect = document.getElementById('settingWhisperModel');
-  if (modelSelect) modelSelect.value = settings.ai?.whisper_model || 'base';
+  const modelInput = document.getElementById('settingWhisperModel');
+  if (modelInput) modelInput.value = settings.ai?.whisper_model || 'base';
 
   const langSelect = document.getElementById('settingWhisperLang');
   if (langSelect) langSelect.value = settings.ai?.language || 'zh';
 
-  // Render installed models badges
-  const modelsContainer = document.getElementById('installedModelsList');
-  if (modelsContainer && diag?.installed_models) {
-    modelsContainer.innerHTML = diag.installed_models.map(m => `
-      <span class="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-        <span>✓</span>
-        <span class="capitalize">${m}</span>
-      </span>
-    `).join('');
-  }
+  // Load and render interactive model cards
+  loadModelsList();
 
   // 3. Hardware & Acceleration
   const deviceSelect = document.getElementById('settingDevice');
@@ -223,6 +215,200 @@ function updateLivePreview() {
   previewBox.style.color = color;
 }
 
+// --- Model Downloader & Manager Logic ---
+let settingsPollInterval = null;
+
+export async function loadModelsList() {
+  const container = document.getElementById('modelsManagerContainer');
+  try {
+    const res = await fetch('/api/models');
+    if (!res.ok) return [];
+    const models = await res.json();
+    renderModelsManager(models);
+    return models;
+  } catch (err) {
+    if (container) container.innerHTML = `<div class="text-center py-4 text-xs text-red-400">Không thể nạp danh sách mô hình: ${err.message}</div>`;
+    return [];
+  }
+}
+
+export function renderModelsManager(models) {
+  const container = document.getElementById('modelsManagerContainer');
+  if (!container || !models) return;
+
+  container.innerHTML = '';
+  models.forEach(m => {
+    const card = document.createElement('div');
+    card.className = 'p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-slate-700/80 transition flex flex-col space-y-2.5';
+    card.id = `modelCard_${m.id}`;
+
+    const statusBadge = m.installed
+      ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">✓ Đã có sẵn</span>`
+      : `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">Chưa tải</span>`;
+
+    const defaultBadge = m.is_default
+      ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">⭐ Mặc định</span>`
+      : '';
+
+    card.innerHTML = `
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <span class="text-xs font-bold text-white">${m.name}</span>
+          ${statusBadge}
+          ${defaultBadge}
+        </div>
+        <div class="flex items-center space-x-2 text-[11px] font-mono text-slate-400">
+          <span>${m.size_mb} MB</span>
+          <span class="text-slate-600">&bull;</span>
+          <span class="text-slate-400">${m.vram_req}</span>
+        </div>
+      </div>
+      
+      <p class="text-[11px] text-slate-400 leading-relaxed">${m.desc}</p>
+
+      <!-- Action buttons & Progress row -->
+      <div class="flex items-center justify-between pt-1">
+        <div class="flex items-center space-x-2">
+          ${!m.installed ? `
+            <button type="button" class="btn-dl-model px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition flex items-center space-x-1" data-id="${m.id}">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+              <span>Tải về (${m.size_mb} MB)</span>
+            </button>
+          ` : `
+            ${!m.is_default ? `
+              <button type="button" class="btn-select-default-model px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white text-xs transition border border-slate-700" data-id="${m.id}">
+                Chọn làm mặc định
+              </button>
+            ` : ''}
+            <button type="button" class="btn-del-model p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition border border-transparent hover:border-red-500/20 ${m.is_default ? 'opacity-30 pointer-events-none' : ''}" data-id="${m.id}" title="${m.is_default ? 'Không thể xóa mô hình mặc định' : 'Xóa mô hình khỏi ổ đĩa'}">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </button>
+          `}
+        </div>
+
+        <!-- Inline Progress (hidden unless downloading this model) -->
+        <div id="inlineProgress_${m.id}" class="hidden flex-1 ml-4 space-y-1">
+          <div class="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+            <span class="inline-status">Đang tải...</span>
+            <span class="inline-pct font-bold text-indigo-400">0%</span>
+          </div>
+          <div class="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+            <div class="inline-bar bg-gradient-to-r from-indigo-500 to-emerald-400 h-full w-0 transition-all duration-300 rounded-full"></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    card.querySelector('.btn-dl-model')?.addEventListener('click', () => {
+      triggerDownloadInSettings(m.id);
+    });
+
+    card.querySelector('.btn-select-default-model')?.addEventListener('click', async () => {
+      await saveModelAsDefault(m.id);
+    });
+
+    card.querySelector('.btn-del-model')?.addEventListener('click', async () => {
+      if (confirm(`Bạn có chắc muốn xóa mô hình '${m.name}' khỏi máy tính để giải phóng dung lượng?`)) {
+        await deleteModelFromDisk(m.id);
+      }
+    });
+
+    container.appendChild(card);
+  });
+}
+
+async function saveModelAsDefault(modelId) {
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ai: { whisper_model: modelId } })
+    });
+    if (!res.ok) throw new Error('Không thể lưu cài đặt');
+    showToast(`Đã chọn mô hình '${modelId}' làm mặc định!`, 'success');
+    const input = document.getElementById('settingWhisperModel');
+    if (input) input.value = modelId;
+    await loadSettings();
+    await loadModelsList();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
+
+async function deleteModelFromDisk(modelId) {
+  try {
+    const res = await fetch(`/api/models/${modelId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Không thể xóa mô hình');
+    }
+    showToast(`Đã xóa mô hình '${modelId}' thành công.`, 'info');
+    await loadModelsList();
+    await loadSettings();
+  } catch (err) {
+    showToast(`Lỗi: ${err.message}`, 'error');
+  }
+}
+
+function triggerDownloadInSettings(modelId) {
+  fetch('/api/models/download', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model_id: modelId })
+  })
+  .then(async res => {
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Không thể bắt đầu tải');
+    }
+    return res.json();
+  })
+  .then(data => {
+    showToast(`Bắt đầu tải mô hình '${modelId}'...`, 'info');
+    const inlineEl = document.getElementById(`inlineProgress_${modelId}`);
+    if (inlineEl) inlineEl.classList.remove('hidden');
+
+    if (settingsPollInterval) clearInterval(settingsPollInterval);
+    settingsPollInterval = setInterval(async () => {
+      try {
+        const pRes = await fetch('/api/models/progress');
+        if (!pRes.ok) return;
+        const pData = await pRes.json();
+        
+        const cardProgress = document.getElementById(`inlineProgress_${pData.model_id}`);
+        if (cardProgress) {
+          cardProgress.classList.remove('hidden');
+          const statusSpan = cardProgress.querySelector('.inline-status');
+          const pctSpan = cardProgress.querySelector('.inline-pct');
+          const barSpan = cardProgress.querySelector('.inline-bar');
+
+          if (statusSpan) statusSpan.textContent = `Đang tải: ${pData.speed_mbps} MB/s (${pData.downloaded_mb}/${pData.total_mb} MB)`;
+          if (pctSpan) pctSpan.textContent = `${pData.percent}%`;
+          if (barSpan) barSpan.style.width = `${pData.percent}%`;
+        }
+
+        if (pData.status === 'COMPLETED') {
+          clearInterval(settingsPollInterval);
+          settingsPollInterval = null;
+          showToast(`Tải thành công mô hình '${pData.model_id}'!`, 'success');
+          await loadModelsList();
+          await loadSettings();
+        } else if (pData.status === 'FAILED') {
+          clearInterval(settingsPollInterval);
+          settingsPollInterval = null;
+          showToast(`Lỗi tải mô hình: ${pData.error}`, 'error');
+          await loadModelsList();
+        }
+      } catch (err) {
+        console.warn('Settings poll error:', err);
+      }
+    }, 500);
+  })
+  .catch(err => {
+    showToast(`Lỗi: ${err.message}`, 'error');
+  });
+}
+
 export function openSettingsModal(defaultTab = 'storage') {
   const modal = document.getElementById('settingsModal');
   if (!modal) return;
@@ -241,6 +427,9 @@ export function closeSettingsModal() {
 
 function switchTab(tabId) {
   activeTab = tabId;
+  if (tabId === 'ai') {
+    loadModelsList();
+  }
   const tabButtons = document.querySelectorAll('.settings-tab-btn');
   const tabPanels = document.querySelectorAll('.settings-tab-panel');
 
@@ -447,6 +636,7 @@ export function initSettings({ onSettingsUpdated } = {}) {
     openSettingsModal,
     closeSettingsModal,
     loadSettings,
+    loadModelsList,
     getSettings: () => currentSettings,
     getDiagnostics: () => currentDiagnostics
   };

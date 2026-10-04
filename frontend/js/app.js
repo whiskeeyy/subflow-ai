@@ -5,6 +5,7 @@ import { initPipeline } from './pipeline.js';
 import { initHistoryDrawer } from './history.js';
 import { initBatchQueue } from './batch.js';
 import { initSettings, openSettingsModal } from './settings.js';
+import { initWizard } from './wizard.js';
 
 // --- State ---
 let cues = [];
@@ -255,6 +256,13 @@ const { getSettings } = initSettings({
       }
       updateSubOverlayStyle();
     }
+  }
+});
+
+// --- First-Run Onboarding Wizard ---
+initWizard({
+  onWizardCompleted: () => {
+    appendLog('Đã hoàn tất cài đặt mô hình AI Base. Sẵn sàng bóc tách phụ đề!', 'success');
   }
 });
 

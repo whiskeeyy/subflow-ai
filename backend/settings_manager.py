@@ -62,6 +62,26 @@ def get_settings_file_path() -> Path:
     return PROJECT_ROOT / "settings.json"
 
 
+def get_models_dir() -> Path:
+    """
+    Determines the models directory path with priority:
+    1st Priority: %APPDATA%/SubFlowAI/models/ (Windows user profile)
+    Fallback: Local project directory ./models/
+    """
+    appdata = os.environ.get("APPDATA")
+    if appdata and sys.platform == "win32":
+        try:
+            models_dir = Path(appdata) / "SubFlowAI" / "models"
+            models_dir.mkdir(parents=True, exist_ok=True)
+            return models_dir
+        except Exception as e:
+            logger.warning(f"Could not initialize APPDATA models folder: {e}. Falling back to local.")
+
+    local_models = PROJECT_ROOT / "models"
+    local_models.mkdir(parents=True, exist_ok=True)
+    return local_models
+
+
 def find_ffmpeg_bin() -> str:
     """Finds ffmpeg binary in bundled package, local ffmpeg_bin, or system PATH."""
     if hasattr(sys, "_MEIPASS"):
@@ -133,15 +153,14 @@ def diagnose_system() -> Dict[str, Any]:
 
     # 3. Detect Installed Models
     installed_models = set()
-    # Check local models/ directory
-    local_models_dir = PROJECT_ROOT / "models"
-    if local_models_dir.exists():
-        for item in local_models_dir.iterdir():
-            if item.is_dir():
-                name = item.name.lower()
-                for sz in ["tiny", "base", "small", "medium", "large-v1", "large-v2", "large-v3"]:
-                    if sz in name:
-                        installed_models.add(sz)
+    for search_dir in [get_models_dir(), PROJECT_ROOT / "models"]:
+        if search_dir.exists():
+            for item in search_dir.iterdir():
+                if item.is_dir() and (item / "model.bin").exists():
+                    name = item.name.lower().replace("whisper-", "")
+                    for sz in ["tiny", "base", "small", "medium", "large-v1", "large-v2", "large-v3"]:
+                        if sz in name:
+                            installed_models.add(sz)
 
     # Check HuggingFace hub cache
     try:
@@ -156,10 +175,6 @@ def diagnose_system() -> Dict[str, Any]:
                                 installed_models.add(sz)
     except Exception as e:
         logger.warning(f"Error checking HF cache: {e}")
-
-    # Guarantee at least 'base' appears if detected or default
-    if not installed_models:
-        installed_models.add("base")
 
     # 4. Resolve automatic selections
     resolved_device = "cuda" if has_nvidia_gpu else "cpu"
@@ -275,6 +290,10 @@ class SettingsManager:
         p = Path(out).resolve()
         p.mkdir(parents=True, exist_ok=True)
         return p
+
+    def get_models_dir(self) -> Path:
+        """Returns verified Path for offline models directory."""
+        return get_models_dir()
 
     def get_resolved_device(self) -> str:
         """Resolves 'auto' device to 'cuda' or 'cpu'."""
