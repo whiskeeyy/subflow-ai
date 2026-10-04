@@ -108,10 +108,52 @@ def get_subprocess_kwargs() -> Dict[str, Any]:
     return kwargs
 
 
+def check_cuda_usable() -> bool:
+    """
+    Verifies whether CTranslate2 / Whisper can actually run on CUDA by checking
+    if required cuBLAS DLLs (cublas64_12.dll or cublas64_11.dll) are loadable.
+    """
+    if sys.platform != "win32":
+        return True
+
+    # 1. Register potential pip-installed nvidia packages into Windows DLL search directory
+    try:
+        import site
+        search_roots = []
+        if hasattr(site, "getsitepackages"):
+            search_roots.extend(site.getsitepackages())
+        user_site = getattr(site, "getusersitepackages", lambda: None)()
+        if user_site:
+            search_roots.append(user_site)
+
+        for sp in search_roots:
+            for sub in ("cublas", "cudnn"):
+                bin_dir = Path(sp) / "nvidia" / sub / "bin"
+                if bin_dir.exists() and hasattr(os, "add_dll_directory"):
+                    try:
+                        os.add_dll_directory(str(bin_dir))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    # 2. Test loading cuBLAS DLL
+    import ctypes
+    for dll_name in ("cublas64_12.dll", "cublas64_11.dll"):
+        try:
+            ctypes.CDLL(dll_name)
+            return True
+        except Exception:
+            pass
+
+    return False
+
+
 def diagnose_system(force_hw_refresh: bool = False) -> Dict[str, Any]:
     """
     Inspects system hardware and environment:
     - NVIDIA GPU detection (name, total VRAM) - Cached across requests
+    - cuBLAS CUDA runtime availability - Cached across requests
     - FFmpeg NVENC encoder support - Cached across requests
     - Local / cached Whisper models - Evaluated dynamically
     - Resolves 'auto' choices into concrete values
@@ -152,6 +194,11 @@ def diagnose_system(force_hw_refresh: bool = False) -> Dict[str, Any]:
             except Exception:
                 pass
 
+        # Check cuBLAS usability for CTranslate2 / Whisper
+        cuda_usable = False
+        if has_nvidia_gpu:
+            cuda_usable = check_cuda_usable()
+
         # 2. FFmpeg NVENC Encoder Detection
         has_nvenc = False
         ffmpeg_exe = find_ffmpeg_bin()
@@ -169,11 +216,12 @@ def diagnose_system(force_hw_refresh: bool = False) -> Dict[str, Any]:
             except Exception as e:
                 logger.warning(f"Error checking ffmpeg encoders: {e}")
 
-        resolved_device = "cuda" if has_nvidia_gpu else "cpu"
+        resolved_device = "cuda" if (has_nvidia_gpu and cuda_usable) else "cpu"
         resolved_encoder = "h264_nvenc" if (has_nvenc and has_nvidia_gpu) else "libx264"
 
         _cached_hw_info = {
             "has_nvidia_gpu": has_nvidia_gpu,
+            "cuda_usable": cuda_usable,
             "gpu_name": gpu_name,
             "vram_gb": vram_gb,
             "has_nvenc": has_nvenc,
@@ -208,6 +256,7 @@ def diagnose_system(force_hw_refresh: bool = False) -> Dict[str, Any]:
 
     return {
         "has_nvidia_gpu": _cached_hw_info["has_nvidia_gpu"],
+        "cuda_usable": _cached_hw_info.get("cuda_usable", False),
         "gpu_name": _cached_hw_info["gpu_name"],
         "vram_gb": _cached_hw_info["vram_gb"],
         "has_nvenc": _cached_hw_info["has_nvenc"],
@@ -322,11 +371,14 @@ class SettingsManager:
         return get_models_dir()
 
     def get_resolved_device(self) -> str:
-        """Resolves 'auto' device to 'cuda' or 'cpu'."""
+        """Resolves 'auto' device to 'cuda' hoặc 'cpu' dựa trên tính khả dụng thực tế của phần cứng và thư viện."""
         configured = self.get_settings().get("ai", {}).get("device", "auto")
+        diag = diagnose_system()
         if configured == "auto":
-            diag = diagnose_system()
             return diag["resolved_device"]
+        if configured == "cuda" and not diag.get("cuda_usable", False):
+            logger.warning("Cấu hình chọn 'cuda' nhưng hệ thống thiếu thư viện cuBLAS (cublas64_12.dll). Tự động dùng CPU.")
+            return "cpu"
         return configured
 
     def get_resolved_encoder(self) -> str:

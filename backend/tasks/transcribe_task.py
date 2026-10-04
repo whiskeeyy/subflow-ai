@@ -19,46 +19,46 @@ _cached_model: Optional[WhisperModel] = None
 _cached_model_key: Optional[Tuple[str, str, str]] = None
 
 
-def get_whisper_model() -> WhisperModel:
+def _resolve_model_source(model_name: str) -> str:
+    """Finds local model directory or validates HuggingFace cache."""
+    local_path = model_downloader.find_model_path(model_name)
+    if local_path:
+        return str(local_path)
+
+    # Fallback: check if model exists in HuggingFace cache
+    user_profile = os.environ.get("USERPROFILE") or os.environ.get("HOME") or ""
+    if user_profile:
+        hf_dir = Path(user_profile) / ".cache" / "huggingface" / "hub"
+        if hf_dir.exists():
+            for item in hf_dir.iterdir():
+                if item.is_dir() and f"whisper-{model_name}" in item.name.lower():
+                    return model_name
+
+    raise ModelNotFoundError(
+        f"Mô hình Whisper '{model_name}' chưa được tải về máy tính. "
+        f"Vui lòng vào 'Cài đặt' -> 'Mô hình AI' hoặc Wizard để tải mô hình trước khi tiếp tục."
+    )
+
+
+def get_whisper_model(force_cpu: bool = False) -> WhisperModel:
     """
     Dynamically loads and caches the WhisperModel instance based on current settings.
     Checks local offline model directory first. Raises ModelNotFoundError if not downloaded.
     Reloads only if model size, device, or compute_type has changed.
+    Supports force_cpu=True for automatic runtime fallback.
     """
     global _cached_model, _cached_model_key
 
     settings = settings_manager.get_settings()
     model_name = settings.get("ai", {}).get("whisper_model", "base")
-    device = settings_manager.get_resolved_device()
+    device = "cpu" if force_cpu else settings_manager.get_resolved_device()
     compute_type = "float16" if device == "cuda" else "int8"
 
     current_key = (model_name, device, compute_type)
 
     if _cached_model is None or _cached_model_key != current_key:
-        local_path = model_downloader.find_model_path(model_name)
-        if local_path:
-            model_source = str(local_path)
-            logger.info(f"Nạp mô hình Whisper từ thư mục cục bộ: {local_path} (Thiết bị: {device}, Compute: {compute_type})...")
-        else:
-            # Fallback: check if model exists in HuggingFace cache
-            user_profile = os.environ.get("USERPROFILE") or os.environ.get("HOME") or ""
-            hf_cached = False
-            if user_profile:
-                hf_dir = Path(user_profile) / ".cache" / "huggingface" / "hub"
-                if hf_dir.exists():
-                    for item in hf_dir.iterdir():
-                        if item.is_dir() and f"whisper-{model_name}" in item.name.lower():
-                            hf_cached = True
-                            break
-
-            if hf_cached:
-                model_source = model_name
-                logger.info(f"Nạp mô hình Whisper từ bộ nhớ cache HuggingFace: {model_name} (Thiết bị: {device}, Compute: {compute_type})...")
-            else:
-                raise ModelNotFoundError(
-                    f"Mô hình Whisper '{model_name}' chưa được tải về máy tính. "
-                    f"Vui lòng vào 'Cài đặt' -> 'Mô hình AI' hoặc Wizard để tải mô hình trước khi tiếp tục."
-                )
+        model_source = _resolve_model_source(model_name)
+        logger.info(f"Nạp mô hình Whisper: {model_name} (Thiết bị: {device}, Compute: {compute_type})...")
 
         try:
             _cached_model = WhisperModel(model_source, device=device, compute_type=compute_type)
@@ -105,6 +105,7 @@ def transcribe_audio(
     Transcribes audio locally using faster-whisper and returns a tuple (srt_content, duration_seconds).
     Emits granular real-time progress callbacks and supports instantaneous cancellation.
     Language is loaded dynamically from settings (defaults to 'zh').
+    Automatically falls back to CPU (int8) if CUDA runtime error (e.g. missing cuBLAS DLL or OOM) occurs.
     """
     path = Path(audio_path)
     if not path.exists():
@@ -114,31 +115,44 @@ def transcribe_audio(
     settings = settings_manager.get_settings()
     lang = settings.get("ai", {}).get("language", "zh")
 
-    # Transcribe speech with configured language
-    segments, info = model.transcribe(str(path), language=lang)
-    total_duration = float(info.duration) if info and info.duration else 0.0
+    def _execute_transcribe(active_model: WhisperModel) -> Tuple[list, float]:
+        segments, info = active_model.transcribe(str(path), language=lang)
+        total_dur = float(info.duration) if info and info.duration else 0.0
 
-    srt_entries = []
-    index = 1
+        entries = []
+        index = 1
 
-    for segment in segments:
-        if cancel_check and cancel_check():
-            logger.info("Transcribe cancelled by user.")
-            raise RuntimeError("Tác vụ nhận diện giọng nói đã bị người dùng hủy bỏ.")
+        for segment in segments:
+            if cancel_check and cancel_check():
+                logger.info("Transcribe cancelled by user.")
+                raise RuntimeError("Tác vụ nhận diện giọng nói đã bị người dùng hủy bỏ.")
 
-        text = segment.text.strip()
-        if not text:
-            continue
+            text = segment.text.strip()
+            if not text:
+                continue
 
-        start_time = format_time(segment.start)
-        end_time = format_time(segment.end)
+            start_time = format_time(segment.start)
+            end_time = format_time(segment.end)
 
-        entry = f"{index}\n{start_time} --> {end_time}\n{text}\n"
-        srt_entries.append(entry)
-        index += 1
+            entry = f"{index}\n{start_time} --> {end_time}\n{text}\n"
+            entries.append(entry)
+            index += 1
 
-        if progress_callback and total_duration > 0:
-            progress_callback(segment.end, total_duration, text)
+            if progress_callback and total_dur > 0:
+                progress_callback(segment.end, total_dur, text)
+
+        return entries, total_dur
+
+    try:
+        srt_entries, total_duration = _execute_transcribe(model)
+    except Exception as e:
+        err_msg = str(e).lower()
+        if ("cublas" in err_msg or "cuda" in err_msg or "cudnn" in err_msg) and _cached_model_key and _cached_model_key[1] == "cuda":
+            logger.warning(f"Lỗi khi thực thi Whisper trên CUDA ({e}). Tự động chuyển đổi sang CPU (int8) để tiếp tục...")
+            model = get_whisper_model(force_cpu=True)
+            srt_entries, total_duration = _execute_transcribe(model)
+        else:
+            raise e
 
     if cancel_check and cancel_check():
         raise RuntimeError("Tác vụ nhận diện giọng nói đã bị người dùng hủy bỏ.")
