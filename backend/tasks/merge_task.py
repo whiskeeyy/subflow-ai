@@ -6,6 +6,8 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
+from backend.settings_manager import settings_manager
+
 logger = logging.getLogger("merge_task")
 
 
@@ -69,19 +71,16 @@ def burn_subtitles_to_video(
     video_path: str,
     srt_path: str,
     output_path: str,
-    primary_color: str = "&H0000FFFF&",
-    font_size: int = 54,
-    margin_v: int = 90,
+    primary_color: Optional[str] = None,
+    font_size: Optional[int] = None,
+    margin_v: Optional[int] = None,
+    font_name: Optional[str] = None,
     play_res_y: int = 1080,
     use_gpu: bool = True
 ) -> str:
     """
     Burns hard subtitles into video while preserving original audio (-c:a copy).
-    1. Clean color hex format for ASS force_style.
-    2. Build force_style: FontName=Arial,Bold=1,FontSize=...,PrimaryColour=...,Outline=3.5,OutlineColour=&H00000000&,BorderStyle=1,Alignment=2,PlayResY=1080,MarginV=...
-    3. Subtitles filter: subtitles=filename='{escaped_srt}':force_style='{force_style_str}'
-    4. FFmpeg cmd: -i video_path -vf sub_filter -c:v h264_nvenc/libx264 -preset veryfast -c:a copy output_path -y
-    5. Fallback gracefully to CPU libx264 if NVENC fails.
+    Styling and encoder choices are loaded dynamically from settings if not explicitly provided.
     """
     ffmpeg_bin = find_ffmpeg()
     if not ffmpeg_bin:
@@ -98,15 +97,23 @@ def burn_subtitles_to_video(
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 1. Clean & Normalize style configurations
-    color_bgr = hex_rgb_to_ass_bgr(primary_color)
+    # 1. Clean & Normalize style configurations (fallback to settings if None)
+    settings = settings_manager.get_settings()
+    preset = settings.get("subtitle_preset", {})
+
+    chosen_color = primary_color if primary_color is not None else preset.get("color_bgr", "&H0000FFFF&")
+    chosen_font_size = font_size if font_size is not None else preset.get("font_size", 54)
+    chosen_margin_v = margin_v if margin_v is not None else preset.get("margin_v", 90)
+    chosen_font_name = font_name if font_name is not None else preset.get("font_name", "Arial Black")
+
+    color_bgr = hex_rgb_to_ass_bgr(chosen_color)
     safe_play_res_y = int(play_res_y) if play_res_y else 1080
-    safe_font_size = max(14, min(140, int(font_size)))
-    safe_margin_v = max(10, min(600, int(margin_v)))
+    safe_font_size = max(14, min(140, int(chosen_font_size)))
+    safe_margin_v = max(10, min(600, int(chosen_margin_v)))
 
     # 2. Build ASS force_style string with explicit PlayResY for standard scaling across any aspect ratio/resolution
     force_style_str = (
-        f"FontName=Arial,Bold=1,FontSize={safe_font_size},"
+        f"FontName={chosen_font_name},Bold=1,FontSize={safe_font_size},"
         f"PrimaryColour={color_bgr},Outline=3.5,OutlineColour=&H00000000&,"
         f"BorderStyle=1,Alignment=2,PlayResY={safe_play_res_y},MarginV={safe_margin_v}"
     )
@@ -122,8 +129,12 @@ def burn_subtitles_to_video(
         "-vf", sub_filter,
     ]
 
-    # 4. Attempt GPU Acceleration (h264_nvenc)
-    if use_gpu:
+    # Resolve encoder from settings
+    resolved_encoder = settings_manager.get_resolved_encoder()
+    can_use_gpu = use_gpu and (resolved_encoder == "h264_nvenc")
+
+    # 4. Attempt GPU Acceleration (h264_nvenc) if resolved to nvenc
+    if can_use_gpu:
         gpu_cmd = base_args + [
             "-c:v", "h264_nvenc",
             "-preset", "p4",

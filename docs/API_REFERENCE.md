@@ -201,7 +201,103 @@ Kích hoạt trình quản lý tệp gốc của hệ điều hành (Windows Exp
 - **URL**: `/api/open-folder`
 - **Phương thức**: `GET`
 - **Query Parameters**:
-  - `path`: Đường dẫn tuyệt đối đến thư mục cần mở (bắt buộc phải nằm trong thư mục `outputs/`).
+  - `path`: Đường dẫn tuyệt đối đến thư mục cần mở (bắt buộc phải nằm trong thư mục lưu trữ đã cấu hình).
+
+---
+
+### 1.10. Lấy Cấu Hình & Chẩn Đoán Phần Cứng (Settings & Hardware Diagnostics)
+Truy vấn toàn bộ thiết lập hiện tại kết hợp với thông tin tự động chẩn đoán phần cứng (GPU NVIDIA, VRAM, NVENC, mô hình AI khả dụng).
+
+- **URL**: `/api/settings`
+- **Phương thức**: `GET`
+- **Phản hồi thành công (`200 OK`)**:
+  ```json
+  {
+    "settings": {
+      "storage": {
+        "output_dir": "D:\\DVRT\\outputs",
+        "auto_cleanup_audio": true,
+        "auto_cleanup_source_video": false
+      },
+      "ai": {
+        "whisper_model": "base",
+        "device": "auto",
+        "language": "zh"
+      },
+      "hardware": {
+        "encoder": "auto",
+        "gpu_device_id": 0
+      },
+      "translation": {
+        "engine": "google_gtx",
+        "api_key": ""
+      },
+      "subtitle_preset": {
+        "color_bgr": "&H0000FFFF&",
+        "font_size": 20,
+        "margin_v": 140,
+        "font_name": "Arial Black"
+      }
+    },
+    "diagnostics": {
+      "has_nvidia_gpu": true,
+      "gpu_name": "NVIDIA GeForce RTX 3050",
+      "vram_gb": 6.0,
+      "has_nvenc": true,
+      "resolved_device": "cuda",
+      "resolved_encoder": "h264_nvenc",
+      "installed_models": ["base"]
+    }
+  }
+  ```
+
+---
+
+### 1.11. Cập Nhật Cấu Hình Hệ Thống (Update Settings)
+Lưu cấu hình người dùng vào `%APPDATA%\SubFlowAI\settings.json` (hoặc `settings.json` cục bộ) một cách nguyên tử (atomic), tự động kiểm tra quyền ghi thư mục xuất video.
+
+- **URL**: `/api/settings`
+- **Phương thức**: `POST`
+- **Content-Type**: `application/json`
+- **Body**: Đối tượng JSON chứa cấu hình từng phần hoặc toàn bộ.
+- **Phản hồi thành công (`200 OK`)**:
+  ```json
+  {
+    "status": "success",
+    "message": "Đã lưu cài đặt thành công.",
+    "settings": { ... }
+  }
+  ```
+
+---
+
+### 1.12. Mở Hộp Thoại Chọn Thư Mục Windows (Browse Folder)
+Kích hoạt hộp thoại Windows Shell Folder Picker chuẩn để người dùng duyệt và chọn thư mục lưu trữ video mà không cần nhập đường dẫn thủ công.
+
+- **URL**: `/api/settings/browse-folder`
+- **Phương thức**: `POST`
+- **Phản hồi thành công (`200 OK`)**:
+  ```json
+  {
+    "path": "D:\\MyVideos\\ExportSubFlow"
+  }
+  ```
+
+---
+
+### 1.13. Khôi Phục Cài Đặt Gốc (Reset Settings)
+Đặt lại toàn bộ cấu hình về giá trị mặc định tối ưu nhất của nhà sản xuất.
+
+- **URL**: `/api/settings/reset`
+- **Phương thức**: `POST`
+- **Phản hồi thành công (`200 OK`)**:
+  ```json
+  {
+    "status": "success",
+    "message": "Đã khôi phục cài đặt gốc.",
+    "settings": { ... }
+  }
+  ```
 
 ---
 

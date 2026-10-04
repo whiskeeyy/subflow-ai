@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-from backend.config import OUTPUTS_DIR
+from backend.settings_manager import settings_manager
 from backend.workflows.video_pipeline import VideoRepurposePipeline
 from backend.tasks.merge_task import burn_subtitles_to_video
 from backend.history_store import mark_task_done, create_task_entry
@@ -123,9 +123,10 @@ class BatchManager:
 
     def trigger_render_task(self, task_id: str, sub_style: Optional[dict] = None) -> Dict[str, Any]:
         """Kích hoạt nhúng phụ đề cho 1 tác vụ chạy bất đồng bộ (non-blocking)."""
+        outputs_dir = settings_manager.get_output_dir()
         task = self._tasks.get(task_id)
         if not task:
-            task_dir = OUTPUTS_DIR / task_id
+            task_dir = outputs_dir / task_id
             if task_dir.exists():
                 task = {
                     "task_id": task_id,
@@ -162,7 +163,8 @@ class BatchManager:
         if not task:
             raise ValueError(f"Task {task_id} không tồn tại trong hàng đợi.")
 
-        task_dir = OUTPUTS_DIR / task_id
+        outputs_dir = settings_manager.get_output_dir()
+        task_dir = outputs_dir / task_id
         video_path = task_dir / "video_goc.mp4"
         srt_path = task_dir / "sub_viet.srt"
         final_video_path = task_dir / "final_video.mp4"
