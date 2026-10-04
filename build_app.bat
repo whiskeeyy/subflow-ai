@@ -90,7 +90,7 @@ if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (
 
 if defined ISCC_PATH (
     echo [*] Phat hien Inno Setup Compiler tai: "!ISCC_PATH!"
-    echo [*] Dang tao bo cai dat dist_installer\SubFlowAI_Setup_v2.0.exe...
+    echo [*] Dang tao bo cai dat dist_installer\SubFlowAI_Setup_v2.1.exe...
     
     if not exist "dist_installer" mkdir "dist_installer"
     "!ISCC_PATH!" installer.iss
@@ -100,7 +100,7 @@ if defined ISCC_PATH (
         echo =====================================================================
         echo               DONG GOI THANH CONG HOAN TAT!
         echo =====================================================================
-        echo  Tep cai dat: dist_installer\SubFlowAI_Setup_v2.0.exe
+        echo  Tep cai dat: dist_installer\SubFlowAI_Setup_v2.1.exe
         echo  San sang de phan phoi cho nguoi dung Windows 64-bit.
         echo =====================================================================
     ) else (
@@ -113,7 +113,7 @@ if defined ISCC_PATH (
     echo Ban chay doc lap da duoc tao thanh cong tai:
     echo   dist\SubFlowAI\SubFlowAI.exe
     echo.
-    echo De tao file setup duy nhat (SubFlowAI_Setup_v2.0.exe), vui long tai
+    echo De tao file setup duy nhat (SubFlowAI_Setup_v2.1.exe), vui long tai
     echo va cai dat Inno Setup 6 tu: https://jrsoftware.org/isdl.php
     echo sau do chay lai file build_app.bat nay.
 )

@@ -1,5 +1,6 @@
 // frontend/js/settings.js — Dynamic Settings Center & Hardware Diagnostics
 import { hexToAssBgr } from './utils.js';
+import { showConfirmModal } from './ui_dialog.js';
 
 let currentSettings = null;
 let currentDiagnostics = null;
@@ -75,9 +76,9 @@ function updateHardwarePill(diag) {
   if (diag.has_nvidia_gpu) {
     dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
     const gpuShort = diag.gpu_name.replace('NVIDIA GeForce ', '').replace('NVIDIA ', '');
-    const enc = diag.has_nvenc ? 'NVENC' : 'CUDA';
+    const enc = diag.has_nvenc ? 'NVENC' : (diag.cuda_usable ? 'CUDA' : 'CPU');
     text.textContent = `🟢 ${gpuShort} (${enc})`;
-    text.title = `GPU: ${diag.gpu_name} | VRAM: ${diag.vram_gb} GB | Encoder: ${diag.resolved_encoder}`;
+    text.title = `GPU: ${diag.gpu_name} | VRAM: ${diag.vram_gb} GB | Encoder: ${diag.resolved_encoder} | AI: ${diag.resolved_device.toUpperCase()}`;
   } else {
     dot.className = 'w-2 h-2 rounded-full bg-amber-400';
     text.textContent = '🟡 CPU (int8)';
@@ -114,9 +115,13 @@ function populateSettingsForm(settings, diag) {
   if (deviceSelect) {
     deviceSelect.value = settings.ai?.device || 'auto';
     const cudaOption = deviceSelect.querySelector('option[value="cuda"]');
-    if (cudaOption && diag && !diag.has_nvidia_gpu) {
-      cudaOption.disabled = true;
-      cudaOption.textContent = 'NVIDIA GPU (CUDA) — Không phát hiện card';
+    if (cudaOption && diag) {
+      if (!diag.has_nvidia_gpu) {
+        cudaOption.disabled = true;
+        cudaOption.textContent = 'NVIDIA GPU (CUDA) — Không phát hiện card';
+      } else if (!diag.cuda_usable) {
+        cudaOption.textContent = 'NVIDIA GPU (CUDA) — Thiếu cuBLAS DLL (Tự động fallback CPU)';
+      }
     }
   }
 
@@ -134,13 +139,15 @@ function populateSettingsForm(settings, diag) {
   const gpuCard = document.getElementById('gpuInfoCard');
   if (gpuCard && diag) {
     if (diag.has_nvidia_gpu) {
+      const badgeText = diag.cuda_usable ? 'CUDA & NVENC Khả dụng' : 'NVENC GPU + CPU int8 AI';
+      const badgeClass = diag.cuda_usable ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300';
       gpuCard.innerHTML = `
         <div class="flex items-center justify-between">
           <span class="text-xs font-semibold text-emerald-400 flex items-center space-x-1.5">
             <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
             <span>${diag.gpu_name}</span>
           </span>
-          <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">CUDA Khả dụng</span>
+          <span class="text-[11px] font-mono px-2 py-0.5 rounded ${badgeClass}">${badgeText}</span>
         </div>
         <div class="grid grid-cols-3 gap-2 mt-2 text-[11px] text-slate-300">
           <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
@@ -152,7 +159,7 @@ function populateSettingsForm(settings, diag) {
             <span class="font-semibold ${diag.has_nvenc ? 'text-emerald-400' : 'text-amber-400'}">${diag.has_nvenc ? 'Khả dụng' : 'Không'}</span>
           </div>
           <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
-            <span class="text-slate-500 block">Độ tăng tốc:</span>
+            <span class="text-slate-500 block">Tăng tốc Render:</span>
             <span class="font-semibold text-indigo-400">4x – 8x so với CPU</span>
           </div>
         </div>
@@ -308,7 +315,14 @@ export function renderModelsManager(models) {
     });
 
     card.querySelector('.btn-del-model')?.addEventListener('click', async () => {
-      if (confirm(`Bạn có chắc muốn xóa mô hình '${m.name}' khỏi máy tính để giải phóng dung lượng?`)) {
+      const confirmed = await showConfirmModal({
+        title: 'Xóa mô hình AI',
+        message: `Bạn có chắc muốn xóa mô hình '${m.name}' khỏi máy tính để giải phóng dung lượng không?`,
+        confirmText: 'Xóa mô hình',
+        cancelText: 'Giữ lại',
+        isDanger: true
+      });
+      if (confirmed) {
         await deleteModelFromDisk(m.id);
       }
     });
@@ -535,7 +549,14 @@ async function handleSaveSettings() {
 }
 
 async function handleResetSettings() {
-  if (!confirm('Bạn có chắc chắn muốn khôi phục toàn bộ cài đặt về mặc định của nhà sản xuất?')) {
+  const confirmed = await showConfirmModal({
+    title: 'Khôi phục cài đặt gốc',
+    message: 'Bạn có chắc chắn muốn khôi phục toàn bộ cài đặt về mặc định của nhà sản xuất? Các cấu hình hiện tại sẽ được làm mới.',
+    confirmText: 'Khôi phục mặc định',
+    cancelText: 'Hủy bỏ',
+    isDanger: true
+  });
+  if (!confirmed) {
     return;
   }
 

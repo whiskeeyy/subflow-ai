@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![SubFlow AI Banner](https://img.shields.io/badge/SubFlow%20AI-v2.0-indigo?style=for-the-badge&logo=fastapi)
+![SubFlow AI Banner](https://img.shields.io/badge/SubFlow%20AI-v2.1-indigo?style=for-the-badge&logo=fastapi)
 ![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109%2B-009688?style=for-the-badge&logo=fastapi)
 ![FFmpeg](https://img.shields.io/badge/FFmpeg-Hardware%20Accelerated-green?style=for-the-badge&logo=ffmpeg)
@@ -29,15 +29,16 @@ Hệ thống loại bỏ hoàn toàn quy trình thủ công phức tạp (phải
 
 | Tính năng | Chi tiết kỹ thuật | Lợi ích |
 | :--- | :--- | :--- |
-| **Bóc Sub Cục Bộ (Local STT)** | Sử dụng `faster-whisper` (`base` model, lượng tử hóa `int8` CPU). | **100% Miễn phí**, bảo mật tuyệt đối, không tốn chi phí API và không giới hạn độ dài video. |
+| **Bóc Sub Cục Bộ (Local STT)** | Sử dụng `faster-whisper` (`base`/`tiny`, lượng tử hóa `int8` CPU & tự động phục hồi CUDA). | **100% Miễn phí**, bảo mật tuyệt đối, không tốn chi phí API và không giới hạn độ dài video. |
 | **Dịch Thuật Bảo Toàn Timestamp** | Google Translate Engine đa luồng (`ThreadPoolExecutor`). | Tốc độ dịch chỉ **1-2 giây**, bảo toàn 100% mốc thời gian millisecond `00:00:00,000`, không bao giờ lệch câu. |
+| **Tự Động Thích Ứng Phần Cứng** | Tự động phân tách: Render GPU `h264_nvenc` + AI CPU `int8` (hoặc CPU thuần `libx264 veryfast` trên máy yếu). | Tối ưu 100% tài nguyên, máy không card rời vẫn chạy mượt mà, máy có GPU xuất video siêu tốc. |
+| **Thực Thi Êm Ái (Zero CMD Popup)** | Toàn bộ tiến trình gọi hệ thống đều chạy ngầm với cờ `CREATE_NO_WINDOW`. | Trải nghiệm đồ họa Studio chuyên nghiệp, **không còn bất kỳ cửa sổ CMD đen nào nhấp nháy**. |
 | **Interactive Live Subtitle Preview** | Video Player HTML5 đồng bộ trực tiếp với parser SRT client-side qua sự kiện `timeupdate`. | Cho phép xem trước chính xác phụ đề nhảy theo giây trên video trước khi bấm nhúng. |
 | **Bộ Thẻ Biên Tập Tương Tác (Cue Cards)** | Thẻ câu tương tác: `➕ Thêm` (tự tính gap & tịnh tiến câu), `➕ Thêm ở đầu`, `✂️ Tách`, `🔗 Gộp`, `🗑️ Xóa`. | Tự động nhảy mốc và **tạm dừng video (pause)** để soi khẩu hình; sửa thời gian trực tiếp `↑`/`↓` (`±0.1s`). |
+| **Đo Lường & Hủy Tác Vụ Tức Thì** | Stream thời gian thực: FPS, Speed `3.2x`, ETA, ticker trích dẫn câu thoại live; nút `[✕ Hủy bỏ]` & `[🔄 Đặt lại]`. | Người dùng nắm toàn quyền kiểm soát, hủy khẩn cấp giải phóng CPU/GPU ngay lập tức nếu cần. |
 | **Hàng Đợi & Nhúng Độc Lập (Non-blocking)** | Render FFmpeg chạy bất đồng bộ với cơ chế khóa `asyncio.Lock` chống xung đột phần cứng. | **Không bao giờ làm nghẽn Editor**: có thể chuyển sang duyệt video khác trong khi video trước đang được nhúng. |
-| **Thanh Điều Hướng & Cài Đặt Desktop** | Desktop Navbar (chuyển tab: Video đơn lẻ / Hàng đợi / Lịch sử) + Trung tâm Cài đặt 6 Tabs. | Tùy biến toàn bộ: chọn thư mục xuất Windows Explorer, nhận diện GPU NVIDIA RTX & NVENC, phông chữ, cỡ chữ. |
-| **Tùy Biến Phụ Đề WYSIWYG** | Color Picker (#RRGGBB $\rightarrow$ ASS BGR), Font Size Slider (14-32px), MarginV (40-260px). | Thay đổi màu sắc, kích thước và vị trí lề đáy phụ đề hiển thị ngay lập tức trên video preview. |
-| **Hardsub Siêu Tốc & Giữ Âm Gốc** | FFmpeg filter `subtitles` + sao chép luồng trực tiếp (`-c:a copy`). | Giữ nguyên 100% chất lượng âm thanh gốc, tăng tốc GPU `h264_nvenc` (tự động fallback `libx264`). |
-| **Kiểm Soát Người Dùng (HITL)** | WebSocket State Machine hai chiều với trạng thái `ACTION_REQUIRED`. | Người dùng luôn nắm quyền kiểm soát và hiệu đính câu chữ trước khi xuất file. |
+| **Hộp Thoại Studio Dark-Theme** | Thay thế 100% `alert()`/`confirm()` bằng Studio Modal (gợi ý khắc phục + chi tiết kỹ thuật) và Toasts nổi. | Giao diện hiện đại, chuyên nghiệp, không làm đơ trình duyệt. |
+| **Thanh Điều Hướng & Cài Đặt Desktop** | Desktop Navbar (chuyển tab: Video đơn lẻ / Hàng đợi / Lịch sử) + Trung tâm Cài đặt 6 Tabs. | Tùy biến toàn bộ: chọn thư mục xuất Windows Explorer, nạp/xóa mô hình AI, phông chữ, cỡ chữ, lề đáy. |
 
 ---
 
@@ -170,20 +171,23 @@ d:\DVRT/
 
 ## 🚀 Khởi Chạy Ứng Dụng
 
-Bạn có thể khởi chạy ứng dụng bằng 1 trong các cách sau:
+Bạn có thể khởi chạy ứng dụng theo 2 chế độ:
 
-- **Cách 1 (Khuyên dùng - 1 Click Windows)**: Nhấp đúp vào tệp **`run.bat`**.
-- **Cách 2 (PowerShell Launcher)**:
-  ```powershell
-  .\run.ps1
-  ```
-- **Cách 3 (Lệnh trực tiếp)**:
+### Chế độ 1: Ứng Dụng Desktop Cục Bộ (Native Window — Khuyên Dùng)
+Khởi chạy cửa sổ phần mềm độc lập chuẩn Studio (sử dụng Edge Chromium / PyWebView):
+```powershell
+.\venv\Scripts\python.exe main_desktop.py
+```
+*Tự động quét cổng mạng khả dụng (`8000–8999`), khởi động máy chủ ngầm và mở ngay cửa sổ ứng dụng.*
+
+### Chế độ 2: Trình Duyệt Web (Browser Mode)
+- **1-Click Windows**: Nhấp đúp vào tệp **`run.bat`**.
+- **PowerShell Launcher**: `.\run.ps1`
+- **Lệnh trực tiếp**:
   ```powershell
   .\venv\Scripts\uvicorn.exe backend.app:app --host 0.0.0.0 --port 8000 --reload
   ```
-
-Sau khi server khởi động thành công, mở trình duyệt tại:
-👉 **`http://localhost:8000`**
+  Sau khi khởi động, truy cập trình duyệt tại: 👉 **`http://localhost:8000`**
 
 ---
 

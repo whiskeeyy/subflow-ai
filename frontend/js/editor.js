@@ -1,5 +1,6 @@
 // frontend/js/editor.js
 import { secondsToDisplay, secondsToSRT, serializeCuesToSRT, serializeCuesToVTT, parseSRT, downloadBlob, timeStringToSeconds } from './utils.js';
+import { showToast } from './ui_dialog.js';
 
 export function initEditor({ cueCardsContainer, srtTextarea, cueCountBadge, btnToggleEditorMode, toggleModeIcon, toggleModeText, btnExportSrt, btnExportVtt, btnResetSrt, subColorPicker, subColorVal, subFontSizeSlider, subFontSizeVal, subMarginVSlider, subMarginVVal, subOverlay, previewPlayer, appendLog, getCues, setCues, getOriginalAiSrt, syncLiveOverlay }) {
 
@@ -375,16 +376,18 @@ export function initEditor({ cueCardsContainer, srtTextarea, cueCountBadge, btnT
 
   btnExportSrt.addEventListener('click', () => {
     if (isRawMode) setCues(parseSRT(srtTextarea.value));
-    if (!getCues().length) { alert('Chưa có phụ đề!'); return; }
+    if (!getCues().length) { showToast('Chưa có phụ đề để xuất!', 'warning'); return; }
     downloadBlob(serializeCuesToSRT(getCues()), 'subtitles.srt', 'text/plain;charset=utf-8');
     appendLog('Đã tải .srt thành công.', 'success');
+    showToast('Đã tải file .srt thành công!', 'success');
   });
 
   btnExportVtt.addEventListener('click', () => {
     if (isRawMode) setCues(parseSRT(srtTextarea.value));
-    if (!getCues().length) { alert('Chưa có phụ đề!'); return; }
+    if (!getCues().length) { showToast('Chưa có phụ đề để xuất!', 'warning'); return; }
     downloadBlob(serializeCuesToVTT(getCues()), 'subtitles.vtt', 'text/vtt;charset=utf-8');
     appendLog('Đã tải .vtt thành công.', 'success');
+    showToast('Đã tải file .vtt thành công!', 'success');
   });
 
   btnResetSrt.addEventListener('click', () => {

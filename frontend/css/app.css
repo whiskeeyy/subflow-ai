@@ -76,3 +76,12 @@
 #wizardModal.open .wizard-dialog {
   transform: scale(1);
 }
+
+/* Studio Dialogs & Modals */
+#studioErrorModal, #studioConfirmModal {
+  transition: opacity 0.2s ease-out;
+}
+#studioErrorModal > div, #studioConfirmModal > div {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+

@@ -1,5 +1,6 @@
 // frontend/js/batch.js — Batch Processing & Task Queue
 import { parseSRT, hexToAssBgr, serializeCuesToSRT } from './utils.js';
+import { showToast, showErrorModal, showConfirmModal } from './ui_dialog.js';
 
 export function initBatchQueue({
   appendLog,
@@ -192,9 +193,10 @@ export function initBatchQueue({
         filename: data.task?.filename || taskId
       });
       appendLog(`Đã nạp video "${data.task?.filename || taskId}" vào trình biên tập.`, 'success');
+      showToast(`Đã nạp "${data.task?.filename || taskId}" vào trình sửa!`, 'info');
     } catch (e) {
       appendLog(`Lỗi mở tác vụ: ${e.message}`, 'error');
-      alert(`Lỗi: ${e.message}`);
+      showErrorModal({ title: 'Không thể mở tác vụ', message: e.message });
     }
   }
 
@@ -202,13 +204,19 @@ export function initBatchQueue({
   btnBatchRenderAll?.addEventListener('click', async () => {
     const readyTasks = currentTasks.filter(t => t.status === 'waiting_review');
     if (!readyTasks.length) {
-      alert('Không có video nào ở trạng thái chờ duyệt kịch bản.');
+      showToast('Không có video nào ở trạng thái chờ duyệt kịch bản.', 'warning');
       return;
     }
 
-    if (!confirm(`Bạn có chắc muốn nhúng hàng loạt cho ${readyTasks.length} video đã duyệt kịch bản không?`)) {
-      return;
-    }
+    const confirmed = await showConfirmModal({
+      title: 'Nhúng hàng loạt',
+      message: `Bạn có chắc muốn bắt đầu nhúng phụ đề hàng loạt cho ${readyTasks.length} video đã duyệt kịch bản không?`,
+      confirmText: 'Bắt đầu nhúng',
+      cancelText: 'Xem lại',
+      isDanger: false
+    });
+
+    if (!confirmed) return;
 
     btnBatchRenderAll.disabled = true;
     btnBatchRenderAll.textContent = '⏳ Đang khởi tạo nhúng hàng loạt...';
@@ -234,11 +242,12 @@ export function initBatchQueue({
       });
       const data = await res.json();
       appendLog(`Lệnh nhúng hàng loạt đã được gửi: ${data.rendered_count} video đang được xử lý!`, 'success');
+      showToast(`Đã khởi chạy nhúng cho ${data.rendered_count} video!`, 'success');
       fetchBatchStatus();
       if (window.refreshHistory) window.refreshHistory();
     } catch (e) {
       appendLog(`Lỗi nhúng hàng loạt: ${e.message}`, 'error');
-      alert(`Lỗi: ${e.message}`);
+      showErrorModal({ title: 'Lỗi nhúng hàng loạt', message: e.message });
     } finally {
       btnBatchRenderAll.disabled = false;
     }
@@ -264,10 +273,11 @@ export function initBatchQueue({
       }
       const data = await res.json();
       appendLog(`Đã tải lên & xếp hàng thành công ${data.enqueued_count} video!`, 'success');
+      showToast(`Đã thêm ${data.enqueued_count} video vào hàng đợi!`, 'success');
       startPolling();
     } catch (e) {
       appendLog(`Lỗi tải lên hàng loạt: ${e.message}`, 'error');
-      alert(`Lỗi: ${e.message}`);
+      showErrorModal({ title: 'Lỗi tải lên hàng loạt', message: e.message });
     }
   }
 

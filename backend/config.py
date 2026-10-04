@@ -1,5 +1,16 @@
 import os
 import sys
+
+# Force UTF-8 stream encoding on Windows to prevent UnicodeEncodeError in cmd.exe/powershell
+if sys.platform == "win32":
+    try:
+        if sys.stdout is not None:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if sys.stderr is not None:
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from pathlib import Path
 from dotenv import load_dotenv
 

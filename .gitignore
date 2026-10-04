@@ -71,6 +71,7 @@ models/
 *.manifest
 build/
 dist/
+dist_installer/
 
 # --- Logs & Diagnostics ---
 *.log

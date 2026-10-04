@@ -3,8 +3,10 @@ import os
 import sys
 import shutil
 import subprocess
+import re
+import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 
 from backend.settings_manager import settings_manager
 
@@ -67,6 +69,137 @@ def hex_rgb_to_ass_bgr(hex_color: str) -> str:
     return "&H0000FFFF&"
 
 
+def _parse_time_str(t_str: str) -> float:
+    try:
+        parts = t_str.strip().split(":")
+        if len(parts) == 3:
+            return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+    except Exception:
+        pass
+    return 0.0
+
+
+def _run_ffmpeg_pipeline(
+    cmd: list,
+    out_path: Path,
+    total_duration_sec: Optional[float] = None,
+    progress_callback: Optional[Callable[[int, str, str, Optional[float]], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+    on_process_started: Optional[Callable[[subprocess.Popen], None]] = None
+) -> str:
+    """
+    Executes FFmpeg with -progress pipe:1, parsing real-time progress (fps, speed, out_time, ETA)
+    silently without console windows, and handles cancellation cleanly.
+    """
+    kwargs = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        universal_newlines=True,
+        **kwargs
+    )
+
+    if on_process_started:
+        on_process_started(proc)
+
+    detected_duration = total_duration_sec or 0.0
+    last_callback_time = 0.0
+    error_buffer = []
+
+    current_fps = "0"
+    current_speed = "1.0x"
+    current_out_time_sec = 0.0
+
+    duration_regex = re.compile(r"Duration:\s*(\d+:\d+:\d+\.?\d*)")
+
+    try:
+        for line in iter(proc.stdout.readline, ""):
+            if not line:
+                break
+            line_str = line.strip()
+            error_buffer.append(line_str)
+            if len(error_buffer) > 25:
+                error_buffer.pop(0)
+
+            if cancel_check and cancel_check():
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                if out_path.exists():
+                    try:
+                        out_path.unlink()
+                    except Exception:
+                        pass
+                raise RuntimeError("Tác vụ nhúng phụ đề đã bị người dùng hủy bỏ.")
+
+            if detected_duration <= 0:
+                d_match = duration_regex.search(line_str)
+                if d_match:
+                    detected_duration = _parse_time_str(d_match.group(1))
+
+            if "=" in line_str:
+                k, _, v = line_str.partition("=")
+                k = k.strip()
+                v = v.strip()
+                if k == "fps":
+                    current_fps = v
+                elif k == "speed":
+                    current_speed = v
+                elif k == "out_time":
+                    current_out_time_sec = _parse_time_str(v)
+                elif k == "progress" and v == "end":
+                    if progress_callback:
+                        progress_callback(100, current_speed, current_fps, 0.0)
+
+            now = time.time()
+            if (now - last_callback_time >= 0.25) and (detected_duration > 0) and (current_out_time_sec > 0):
+                last_callback_time = now
+                pct = min(99, max(0, int((current_out_time_sec / detected_duration) * 100)))
+                eta_sec = None
+                try:
+                    spd_mult = float(current_speed.replace("x", "").strip())
+                    if spd_mult > 0:
+                        eta_sec = max(0.0, (detected_duration - current_out_time_sec) / spd_mult)
+                except Exception:
+                    pass
+
+                if progress_callback:
+                    progress_callback(pct, current_speed, current_fps, eta_sec)
+
+        proc.stdout.close()
+        proc.wait()
+
+        if cancel_check and cancel_check():
+            raise RuntimeError("Tác vụ nhúng phụ đề đã bị người dùng hủy bỏ.")
+
+        if proc.returncode != 0:
+            last_err = "\n".join(error_buffer[-8:])
+            raise subprocess.CalledProcessError(proc.returncode, cmd, output=last_err)
+
+    except Exception as exc:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        if cancel_check and cancel_check():
+            if out_path.exists():
+                try:
+                    out_path.unlink()
+                except Exception:
+                    pass
+            raise RuntimeError("Tác vụ nhúng phụ đề đã bị người dùng hủy bỏ.") from exc
+        raise
+
+    return str(out_path)
+
+
 def burn_subtitles_to_video(
     video_path: str,
     srt_path: str,
@@ -76,11 +209,15 @@ def burn_subtitles_to_video(
     margin_v: Optional[int] = None,
     font_name: Optional[str] = None,
     play_res_y: int = 1080,
-    use_gpu: bool = True
+    use_gpu: bool = True,
+    total_duration_sec: Optional[float] = None,
+    progress_callback: Optional[Callable[[int, str, str, Optional[float]], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+    on_process_started: Optional[Callable[[subprocess.Popen], None]] = None
 ) -> str:
     """
     Burns hard subtitles into video while preserving original audio (-c:a copy).
-    Styling and encoder choices are loaded dynamically from settings if not explicitly provided.
+    Supports GPU acceleration (NVENC), real-time progress callbacks, and instantaneous cancellation.
     """
     ffmpeg_bin = find_ffmpeg()
     if not ffmpeg_bin:
@@ -122,9 +259,11 @@ def burn_subtitles_to_video(
     escaped_srt = format_ffmpeg_sub_path(str(s_path))
     sub_filter = f"subtitles=filename='{escaped_srt}':force_style='{force_style_str}'"
 
-    # Base FFmpeg input
+    # Base FFmpeg input with nostdin and progress pipe
     base_args = [
         ffmpeg_bin,
+        "-nostdin",
+        "-progress", "pipe:1",
         "-i", str(v_path),
         "-vf", sub_filter,
     ]
@@ -146,18 +285,17 @@ def burn_subtitles_to_video(
         ]
         try:
             logger.info("Đang nhúng phụ đề vào video bằng GPU (h264_nvenc)...")
-            subprocess.run(
+            return _run_ffmpeg_pipeline(
                 gpu_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=True
+                out_path,
+                total_duration_sec=total_duration_sec,
+                progress_callback=progress_callback,
+                cancel_check=cancel_check,
+                on_process_started=on_process_started
             )
-            logger.info(f"Nhúng phụ đề thành công bằng GPU: {out_path}")
-            return str(out_path)
         except subprocess.CalledProcessError as exc:
             logger.warning(
-                f"GPU h264_nvenc không khả dụng hoặc lỗi: {exc.stderr[-200:] if exc.stderr else ''}. "
+                f"GPU h264_nvenc không khả dụng hoặc lỗi: {exc.output[-200:] if exc.output else ''}. "
                 "Tự động chuyển sang CPU encoder (libx264)..."
             )
 
@@ -174,17 +312,13 @@ def burn_subtitles_to_video(
 
     try:
         logger.info("Đang nhúng phụ đề vào video bằng CPU (libx264, preset veryfast)...")
-        subprocess.run(
+        return _run_ffmpeg_pipeline(
             cpu_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=True
+            out_path,
+            total_duration_sec=total_duration_sec,
+            progress_callback=progress_callback,
+            cancel_check=cancel_check,
+            on_process_started=on_process_started
         )
-        logger.info(f"Nhúng phụ đề hoàn tất bằng CPU: {out_path}")
-        return str(out_path)
     except subprocess.CalledProcessError as exc:
-        err_lines = [l.strip() for l in exc.stderr.splitlines() if l.strip()]
-        last_error = "\n".join(err_lines[-5:]) if err_lines else exc.stderr[:200]
-        logger.error(f"Lỗi khi burn phụ đề bằng FFmpeg: {last_error}")
-        raise RuntimeError(f"FFmpeg render video thất bại: {last_error}") from exc
+        raise RuntimeError(f"FFmpeg render video thất bại: {exc.output}") from exc

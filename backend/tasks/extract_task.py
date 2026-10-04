@@ -36,10 +36,19 @@ def find_ffmpeg() -> str:
     return ""
 
 
-def extract_audio_from_video(video_path: str, output_audio_path: str) -> str:
+from typing import Optional, Callable
+
+
+def extract_audio_from_video(
+    video_path: str,
+    output_audio_path: str,
+    cancel_check: Optional[Callable[[], bool]] = None,
+    on_process_started: Optional[Callable[[subprocess.Popen], None]] = None
+) -> str:
     """
     Extracts audio stream from a local video file using FFmpeg:
-    ffmpeg -i <video_path> -q:a 0 -map a <output_audio_path> -y
+    ffmpeg -nostdin -y -i <video_path> -q:a 0 -map a <output_audio_path>
+    Executes silently without console window and supports cancellation.
     """
     ffmpeg_bin = find_ffmpeg()
     if not ffmpeg_bin:
@@ -58,24 +67,52 @@ def extract_audio_from_video(video_path: str, output_audio_path: str) -> str:
 
     cmd = [
         ffmpeg_bin,
+        "-nostdin",
+        "-y",
         "-i", str(v_path),
         "-q:a", "0",
         "-map", "a",
-        str(a_path),
-        "-y"
+        str(a_path)
     ]
 
+    kwargs = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            check=True
+            **kwargs
         )
-    except subprocess.CalledProcessError as exc:
-        raise RuntimeError(
-            f"Lỗi khi trích xuất âm thanh bằng FFmpeg: {exc.stderr.strip()}"
-        ) from exc
+
+        if on_process_started:
+            on_process_started(proc)
+
+        while proc.poll() is None:
+            if cancel_check and cancel_check():
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                if a_path.exists():
+                    try:
+                        a_path.unlink()
+                    except Exception:
+                        pass
+                raise RuntimeError("Tác vụ đã bị người dùng hủy bỏ.")
+            import time
+            time.sleep(0.1)
+
+        stdout, stderr = proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(f"Lỗi khi trích xuất âm thanh bằng FFmpeg: {stderr.strip()}")
+
+    except Exception as exc:
+        if cancel_check and cancel_check():
+            raise RuntimeError("Tác vụ đã bị người dùng hủy bỏ.") from exc
+        raise
 
     return str(a_path)
