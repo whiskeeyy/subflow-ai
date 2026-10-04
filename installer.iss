@@ -4,7 +4,7 @@
 ; =====================================================================
 
 #define MyAppName "SubFlow AI"
-#define MyAppVersion "2.0"
+#define MyAppVersion "2.1"
 #define MyAppPublisher "SubFlow AI Studio"
 #define MyAppURL "https://github.com/whiskeeyy/subflow-ai"
 #define MyAppExeName "SubFlowAI.exe"
@@ -20,7 +20,7 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 OutputDir=dist_installer
-OutputBaseFilename=SubFlowAI_Setup_v2.0
+OutputBaseFilename=SubFlowAI_Setup_v2.1
 SetupIconFile=frontend\assets\logo.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/ultra64

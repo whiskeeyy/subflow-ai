@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![SubFlow AI Banner](https://img.shields.io/badge/SubFlow%20AI-v2.0-indigo?style=for-the-badge&logo=fastapi)
+![SubFlow AI Banner](https://img.shields.io/badge/SubFlow%20AI-v2.1-indigo?style=for-the-badge&logo=fastapi)
 ![Python Version](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109%2B-009688?style=for-the-badge&logo=fastapi)
 ![FFmpeg](https://img.shields.io/badge/FFmpeg-Hardware%20Accelerated-green?style=for-the-badge&logo=ffmpeg)

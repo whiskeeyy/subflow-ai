@@ -182,7 +182,7 @@ def main():
 
     # 6. Create Native Desktop Window
     window = webview.create_window(
-        title="SubFlow AI - Studio Phụ Đề Video Ngắn",
+        title="SubFlow AI v2.1 - Studio Phụ Đề Video Ngắn",
         url=app_url,
         width=1420,
         height=920,
