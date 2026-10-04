@@ -160,3 +160,76 @@ Quá trình render video cố gắng sử dụng phần cứng đồ họa theo 
 - Client nhận phản hồi ngay, cập nhật trạng thái thẻ sang `rendering` (`🎬 Đang nhúng phụ đề...`).
 - Người dùng có thể ngay lập tức chuyển sang duyệt kịch bản của bất kỳ video nào khác trong hàng đợi mà không cần chờ video trước render xong.
 - Khi render hoàn tất, hệ thống tự động lưu vào lịch sử dự án và cập nhật giao diện client thông qua polling `/api/batch/status`.
+
+---
+
+## 8. Chẩn Đoán Phần Cứng & Cơ Chế Tăng Tốc Kép (Dual-Engine Acceleration)
+
+### 8.1. Kiểm Tra Tính Khả Dụng Thực Tế của cuBLAS (`check_cuda_usable`)
+Khác với các công cụ thông thường chỉ kiểm tra sự hiện diện vật lý của GPU bằng `nvidia-smi` hoặc `torch.cuda.is_available()`, SubFlow AI thực hiện kiểm tra sâu mức nhị phân:
+- Quét và nạp động `cublas64_12.dll` hoặc `cublas64_11.dll` thông qua `ctypes.CDLL`.
+- Tự động bổ sung các thư mục `nvidia.cublas.bin` và `nvidia.cudnn.bin` từ Python `site-packages` vào không gian nạp DLL (`os.add_dll_directory`).
+- **Phân tách thông minh (Graceful Degradation)**:
+  - **Mã hóa Video (Encoder)**: Dùng **`h264_nvenc`** nếu có GPU NVIDIA (vì chip NVENC hoạt động trực tiếp qua driver màn hình `nvencodeapi64.dll`).
+  - **Nhận Diện Giọng Nói (Speech AI)**: Nếu thiếu `cublas64_12.dll`, tự động chuyển sang **`device="cpu"` (`compute_type="int8"`)**.
+  - **Máy không có GPU rời**: Tự động chuyển toàn bộ sang **`libx264 veryfast`** + **`cpu int8`**, tối ưu cho CPU 2 nhân đến 8 nhân với bộ nhớ RAM < 500MB.
+
+### 8.2. Cơ Chế Tự Phục Hồi Khi Đang Chạy (Runtime Fallback)
+Trong `backend/tasks/transcribe_task.py`, nếu tiến trình bóc băng gặp lỗi CUDA/cuBLAS/OOM giữa chừng:
+1. Bắt ngoại lệ và ghi log cảnh báo thân thiện.
+2. Tự động khởi tạo ngay lập tức `WhisperModel(model_source, device="cpu", compute_type="int8")`.
+3. Tiếp tục bóc băng và cập nhật lại cache singleton `_cached_model`.
+4. Người dùng không bao giờ bị gián đoạn hay phải thao tác lại từ đầu.
+
+---
+
+## 9. Kiến Trúc Ứng Dụng Desktop (PyWebView, PyInstaller & Inno Setup)
+
+### 9.1. Khởi Chạy Desktop Đa Luồng Cục Bộ (`main_desktop.py`)
+Ứng dụng hoạt động theo kiến trúc Native Desktop Hybrid:
+- **FastAPI / Uvicorn Server**: Chạy trên một luồng nền (Daemon Thread) ngầm định.
+- **Dynamic Port Resolver**: Quét và tự động cấp phát cổng mạng khả dụng ngẫu nhiên trong khoảng `8000–8999` (`find_free_port()`), triệt tiêu 100% nguy cơ xung đột cổng (`Port already in use`).
+- **PyWebView**: Nhúng trình duyệt Edge Chromium (WebView2) chuẩn Windows với kích thước tối ưu 1380x880, hỗ trợ toàn bộ công nghệ HTML5, CSS Grid, WebSocket và SVG.
+
+### 9.2. Trình Phân Giải Đường Dẫn Runtime (`get_bundle_dir`)
+Khi chạy dưới dạng mã nguồn Python (`dev mode`) hoặc file thực thi đã đóng gói PyInstaller (`frozen mode`), các tệp tĩnh và nhị phân được định vị an toàn:
+```python
+def get_bundle_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) if hasattr(sys, "_MEIPASS") else Path(sys.executable).parent
+    return Path(__file__).resolve().parent.parent
+```
+Tự động nạp `ffmpeg_bin/` vào `os.environ["PATH"]` khi khởi động ứng dụng.
+
+### 9.3. Phân Tách Dữ Liệu Người Dùng (%APPDATA%\SubFlowAI)
+- **Cấu hình (`settings.json`)** & **Mô hình AI (`models/`)**: Lưu trữ cố định tại `%APPDATA%\SubFlowAI\`.
+- Cho phép người dùng gỡ cài đặt hoặc cập nhật phiên bản mới mà **không bị mất** cấu hình hay phải tải lại các mô hình AI dung lượng lớn.
+
+---
+
+## 10. Thực Thi Không Cửa Sổ (`CREATE_NO_WINDOW`) & Kiểm Soát Tác Vụ
+
+### 10.1. Triệt Tiêu Cửa Sổ Console Đen Nhấp Nháy
+Mọi tác vụ gọi lệnh hệ thống (FFmpeg extract, FFmpeg burn sub, `nvidia-smi`, Windows folder picker) đều bắt buộc gán cờ ngầm định trên nền tảng Windows:
+```python
+kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+```
+Đảm bảo trải nghiệm đồ họa mượt mà chuẩn Studio, không có bất kỳ cửa sổ CMD đen nào nhảy lên rồi tắt.
+
+### 10.2. Kiểm Soát Tác Vụ Thời Gian Thực & Hủy Tức Thì (Instant Cancel)
+- **Luồng hủy 2 cấp độ**:
+  - Hủy tiến trình FFmpeg Popen ngầm ngay lập tức (`proc.kill()`).
+  - Hủy vòng lặp generator của Whisper và hàng đợi ThreadPool của Google Translate thông qua cờ kiểm tra `cancel_check()`.
+- **Stream thông số chi tiết**:
+  - Tốc độ xử lý (FPS, Speed `3.2x`).
+  - Mốc thời gian `MM:SS / MM:SS`, số giây còn lại ước tính (ETA).
+  - Ticker trích dẫn câu thoại AI vừa bóc được theo thời gian thực.
+- **Failsafe Watchdog**: Tự động phát hiện trạng thái treo quá 120 giây không có phản hồi và cảnh báo để người dùng bấm `[🔄 Đặt lại]`.
+
+---
+
+## 11. Hệ Thống Hộp Thoại & Thông Báo Studio (`ui_dialog.js`)
+Loại bỏ hoàn toàn các hàm `alert()` và `confirm()` nguyên bản của trình duyệt (vốn làm đơ UI và thiếu thẩm mỹ):
+- **Studio Error Modal (`showErrorModal`)**: Hiển thị lỗi có phân cấp gồm tiêu đề thân thiện, gợi ý khắc phục và chi tiết kỹ thuật có thể mở rộng (`<details>`).
+- **Studio Confirm Modal (`showConfirmModal`)**: Hộp thoại xác nhận chuẩn phong cách dark-mode (ví dụ khi hủy tác vụ hoặc khôi phục cài đặt gốc).
+- **Studio Toast (`showToast`)**: Thông báo nổi góc dưới màn hình với màu sắc phân biệt trạng thái (`success`, `warn`, `error`).

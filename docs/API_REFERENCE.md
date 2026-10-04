@@ -285,8 +285,8 @@ Kích hoạt hộp thoại Windows Shell Folder Picker chuẩn để người d�
 
 ---
 
-### 1.13. Khôi Phục Cài Đặt Gốc (Reset Settings)
-Đặt lại toàn bộ cấu hình về giá trị mặc định tối ưu nhất của nhà sản xuất.
+#### 1.13. Khôi Phục Cài Đặt Gốc (Reset Settings)
+Đắt lại toàn bộ cấu hình về giá trị mặc định tối ưu nhất của nhà sản xuất.
 
 - **URL**: `/api/settings/reset`
 - **Phương thức**: `POST`
@@ -296,6 +296,73 @@ Kích hoạt hộp thoại Windows Shell Folder Picker chuẩn để người d�
     "status": "success",
     "message": "Đã khôi phục cài đặt gốc.",
     "settings": { ... }
+  }
+  ```
+
+---
+
+### 1.14. Quản Lý Mô Hình AI Cục Bộ (Offline Models API)
+
+#### A. Danh Sách Mô Hình (`GET /api/models`)
+Trả về danh sách các mô hình Faster-Whisper được hỗ trợ, kích thước tải về, dung lượng VRAM/RAM yêu cầu và trạng thái cài đặt trên ổ đĩa.
+```json
+[
+  {
+    "id": "tiny",
+    "name": "Whisper Tiny",
+    "size_mb": 75,
+    "vram_mb": 500,
+    "installed": true,
+    "is_default": true,
+    "speed": "Siêu nhanh (~3-5s)",
+    "accuracy": "Khá (Hội thoại rõ ràng)",
+    "path": "C:\\Users\\admin\\AppData\\Roaming\\SubFlowAI\\models\\whisper-tiny"
+  }
+]
+```
+
+#### B. Kích Hoạt Tải Mô Hình Ngầm (`POST /api/models/download`)
+Bắt đầu tải mô hình từ HuggingFace trên luồng nền (Daemon Thread).
+- **Body**: `{ "model_id": "base" }`
+- **Phản hồi**: `{ "status": "downloading", "model_id": "base" }`
+
+#### C. Lấy Tiến Độ Tải (`GET /api/models/progress`)
+- **Phản hồi**:
+  ```json
+  {
+    "model_id": "base",
+    "status": "downloading",
+    "percent": 45.2,
+    "downloaded_mb": 63.3,
+    "total_mb": 140.0,
+    "speed_mb": 4.5
+  }
+  ```
+
+#### D. Xóa Mô Hình Khỏi Ổ Đĩa (`DELETE /api/models/{model_id}`)
+Xóa sạch thư mục mô hình khỏi ổ đĩa để giải phóng dung lượng. (Có cờ `force=true` nếu là model mặc định).
+
+---
+
+### 1.15. Hủy Tác Vụ Tức Thì (Instant Cancel Pipeline)
+Gửi tín hiệu dừng ngay lập tức tiến trình bóc băng, dịch thuật hoặc render FFmpeg đang chạy.
+
+- **URL**: `/api/pipeline/cancel`
+- **Phương thức**: `POST`
+- **Content-Type**: `application/json`
+- **Request Body**:
+  ```json
+  {
+    "task_id": "task_a1b2c3d4"
+  }
+  ```
+- **Phản hồi thành công (`200 OK`)**:
+  ```json
+  {
+    "status": "success",
+    "task_id": "task_a1b2c3d4",
+    "cancelled": true,
+    "message": "Đã gửi tín hiệu hủy tác vụ."
   }
   ```
 
@@ -313,17 +380,20 @@ Client                                      Server
   ├─── 1. Kết nối & Gửi Init Payload ────────►│
   │    { "task_id": "task_..." }              │
   │                                           ├─── Bóc tách âm thanh & dịch thuật
-  │◄── 2. Phát PROGRESS (20%, 50%, 75%) ──────┤
+  │◄── 2. Phát PROGRESS (20%, 50%, 75%) ──────┤    (kèm metrics FPS, Speed, Quote)
   │                                           │
   │◄── 3. Phát ACTION_REQUIRED ───────────────┤ (Tạm dừng chờ người dùng)
   │    { srt_content, video_url }             │
   │                                           │
   │    (Người dùng xem preview & chỉnh sửa)   │
   │                                           │
+  │─── [Tuỳ chọn: Gửi CANCEL] ───────────────►│ ──► Dừng khẩn cấp proc.kill()
+  │◄── Phát CANCELLED ────────────────────────┤
+  │                                           │
   ├─── 4. Gửi RESUME_WITH_SCRIPT ────────────►│
   │    { edited_srt, sub_style }              │
   │                                           ├─── Nhúng phụ đề bằng FFmpeg
-  │◄── 5. Phát PROGRESS (90%) ────────────────┤
+  │◄── 5. Phát PROGRESS (80% - 95%) ──────────┤    (kèm realtime FPS, Speed, ETA)
   │                                           │
   │◄── 6. Phát SUCCESS (final_video.mp4) ─────┤
   │                                           ▼
@@ -353,7 +423,7 @@ Client                                      Server
 }
 ```
 
-#### C. Hủy tác vụ (Cancel)
+#### C. Hủy tác vụ đang chạy (Cancel)
 ```json
 {
   "action": "CANCEL"
@@ -364,16 +434,32 @@ Client                                      Server
 
 ### 2.2. Thông Điệp từ Server phát xuống Client
 
-#### A. Tiến độ xử lý (PROGRESS)
+#### A. Tiến độ chi tiết theo thời gian thực (PROGRESS)
 ```json
 {
   "status": "PROGRESS",
-  "percent": 50,
-  "message": "Đang gọi faster-whisper cục bộ để bóc tách lời thoại và tạo mốc thời gian SRT..."
+  "percent": 84,
+  "message": "Đang nhúng phụ đề vào video...",
+  "metrics": {
+    "fps": 164.5,
+    "speed": "3.8x",
+    "out_time": "00:00:45.20",
+    "total_duration": 60.0,
+    "eta_sec": 4
+  },
+  "quote": "Đây là câu phụ đề AI vừa nhận diện được..."
 }
 ```
 
-#### B. Yêu cầu duyệt kịch bản (ACTION_REQUIRED)
+#### B. Hủy thành công (CANCELLED)
+```json
+{
+  "status": "CANCELLED",
+  "message": "Đã hủy tiến trình theo yêu cầu người dùng."
+}
+```
+
+#### C. Yêu cầu duyệt kịch bản (ACTION_REQUIRED)
 ```json
 {
   "status": "ACTION_REQUIRED",
