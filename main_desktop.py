@@ -5,6 +5,17 @@ and renders the modern UI inside a native Microsoft Edge WebView2 (Chromium) win
 """
 import os
 import sys
+
+# Force UTF-8 stream encoding on Windows to prevent UnicodeEncodeError in cmd.exe/powershell
+if sys.platform == "win32":
+    try:
+        if sys.stdout is not None:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if sys.stderr is not None:
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 import time
 import socket
 import logging
@@ -94,7 +105,7 @@ def show_webview2_missing_dialog() -> bool:
             return True
     except Exception as exc:
         logger.error(f"Không thể hiển thị hộp thoại cảnh báo: {exc}")
-        print(f"\n[CẢNH BÁO] {msg}\nLink: https://go.microsoft.com/fwlink/p/?LinkId=2124703\n", file=sys.stderr)
+        print(f"\n[CANH BAO] {title}\nLink: https://go.microsoft.com/fwlink/p/?LinkId=2124703\n", file=sys.stderr)
 
     return False
 
@@ -124,8 +135,8 @@ def wait_for_server(port: int, timeout: float = 12.0) -> bool:
 
 def main():
     print("=" * 65)
-    print("  SubFlow AI Studio - Phiên bản Desktop")
-    print("  Đang khởi tạo môi trường và kiểm tra tài nguyên hệ thống...")
+    print("  SubFlow AI Studio - Phien ban Desktop")
+    print("  Dang khoi tao moi truong va kiem tra tai nguyen he thong...")
     print("=" * 65)
 
     # 1. WebView2 Runtime Verification
