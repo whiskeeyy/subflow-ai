@@ -37,11 +37,13 @@
 
 <body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col antialiased selection:bg-indigo-500 selection:text-white">
 
-  <!-- TOP NAVIGATION BAR -->
-  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50">
-    <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-      <div class="flex items-center space-x-3">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" class="w-10 h-10 drop-shadow-lg">
+  <!-- TOP DESKTOP NAVIGATION BAR -->
+  <header class="h-16 border-b border-slate-800 bg-[#0d1117]/95 backdrop-blur-md sticky top-0 z-40 px-4">
+    <div class="max-w-7xl mx-auto h-full flex items-center justify-between gap-4">
+      
+      <!-- Left Zone: Brand & Version & Hardware Status Pill -->
+      <div class="flex items-center space-x-3 shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" class="w-9 h-9 drop-shadow-lg">
           <defs>
             <linearGradient id="g" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
               <stop offset="0%" stop-color="#6366f1"/>
@@ -53,125 +55,205 @@
           <line x1="4" y1="20" x2="10" y2="20" stroke="url(#g)" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
           <line x1="4" y1="24" x2="8" y2="24" stroke="url(#g)" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
         </svg>
-        <div>
-          <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-indigo-200 to-indigo-400 bg-clip-text text-transparent flex items-center space-x-2">
-            <span>SubFlow AI</span>
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 uppercase tracking-wider">Studio</span>
-          </h1>
-          <p class="text-xs text-slate-400">Tự động bóc tách & dịch phụ đề &bull; Xem trước thời gian thực &bull; Hardsub 1-Click</p>
+        <div class="flex items-center space-x-2">
+          <span class="text-base font-bold tracking-tight bg-gradient-to-r from-white via-indigo-200 to-indigo-400 bg-clip-text text-transparent">
+            SubFlow AI
+          </span>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider font-semibold">
+            v2.0 Desktop
+          </span>
+        </div>
+        
+        <!-- Hardware Status Pill -->
+        <div id="hwStatusPill" class="hidden sm:flex items-center space-x-1.5 text-xs px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-300 cursor-pointer hover:border-slate-700 transition" title="Nhấp để xem cấu hình phần cứng">
+          <span id="hwStatusDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="hwStatusText" class="font-mono text-[11px] text-slate-300">Đang quét GPU...</span>
         </div>
       </div>
 
-      <div class="flex items-center space-x-3">
-        <div id="connectionStatus" class="flex items-center space-x-2 text-xs px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+      <!-- Center Zone: Workspace Navigation Tabs -->
+      <div class="flex items-center bg-slate-950/80 p-1 rounded-xl border border-slate-800/80 space-x-1 shrink-0">
+        <button
+          type="button"
+          id="tabBtnSingle"
+          class="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-white border border-slate-700 transition flex items-center space-x-1.5 shadow-sm"
+        >
+          <span>🎬 Video đơn lẻ</span>
+        </button>
+        <button
+          type="button"
+          id="tabBtnBatch"
+          class="px-3.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition flex items-center space-x-1.5"
+        >
+          <span>🗂️ Hàng đợi</span>
+        </button>
+        <button
+          type="button"
+          id="btnToggleHistory"
+          class="px-3.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition flex items-center space-x-1.5"
+        >
+          <span>📜 Lịch sử</span>
+        </button>
+      </div>
+
+      <!-- Right Zone: Quick Actions & System Tools -->
+      <div class="flex items-center space-x-2.5 shrink-0">
+        <div id="connectionStatus" class="hidden md:flex items-center space-x-2 text-xs px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-slate-300">
           <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
           <span>Sẵn sàng</span>
         </div>
-        <button id="btnToggleHistory" class="flex items-center space-x-1.5 text-xs px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white transition" title="Lịch sử dự án">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-          <span>Lịch sử</span>
+        
+        <button
+          id="btnNavOpenFolder"
+          type="button"
+          class="flex items-center space-x-1.5 text-xs px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white transition"
+          title="Mở thư mục lưu trữ video thành phẩm trong Windows Explorer"
+        >
+          <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"></path></svg>
+          <span class="hidden sm:inline">Thư mục xuất</span>
+        </button>
+
+        <button
+          id="btnNavSettings"
+          type="button"
+          class="flex items-center space-x-1.5 text-xs px-3.5 py-1.5 rounded-full bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 hover:text-white transition font-medium"
+          title="Mở bảng cài đặt hệ thống & GPU"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+          <span>Cài đặt</span>
         </button>
       </div>
+
     </div>
   </header>
 
   <!-- MAIN CONTAINER -->
-  <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-8 space-y-6">
+  <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-6 space-y-6">
 
-    <!-- INPUT & CONFIGURATION CARD -->
-    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
-      <div class="absolute -top-24 -right-24 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+    <!-- WORKSPACE 1: SINGLE VIDEO WORKFLOW -->
+    <div id="singleWorkflowSection" class="space-y-6">
+      <!-- INPUT & CONFIGURATION CARD -->
+      <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+        <div class="absolute -top-24 -right-24 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-      <h2 class="text-sm font-semibold uppercase tracking-wider text-indigo-400 mb-4 flex items-center space-x-2">
-        <span>1. Chọn video MP4 từ máy tính</span>
-      </h2>
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-indigo-400 mb-4 flex items-center space-x-2">
+          <span>1. Chọn video MP4 từ máy tính</span>
+        </h2>
 
-      <div class="space-y-4">
-        <!-- Local Video File Input (Drag & Drop Zone) -->
-        <div>
-          <label class="block text-xs font-medium text-slate-300 mb-1.5">Tệp video gốc (.mp4) — Hỗ trợ chọn/kéo thả nhiều video cùng lúc</label>
-          <input
-            type="file"
-            id="videoFileInput"
-            accept="video/mp4,video/*"
-            multiple
-            class="hidden"
-          />
-          <div
-            id="dropzone"
-            class="border-2 border-dashed border-slate-700 hover:border-indigo-500/70 bg-slate-950/70 rounded-xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center space-y-2 group"
-          >
-            <div class="w-12 h-12 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
-              </svg>
-            </div>
-            <div id="fileInfoText" class="space-y-1">
-              <p class="text-sm font-medium text-slate-200">
-                Nhấp để chọn tệp video MP4 (hoặc chọn 10–20 video) hoặc kéo thả vào đây
-              </p>
-              <p class="text-xs text-slate-500">Hỗ trợ chọn nhiều video cùng lúc &bull; Hệ thống tự động xếp hàng AI ngầm</p>
-            </div>
-            <div id="fileSelectedBadge" class="hidden mt-2 inline-flex items-center space-x-2 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-3 py-1 rounded-full text-xs font-mono">
-              <span id="selectedFileName">video.mp4</span>
-              <span id="selectedFileSize" class="text-slate-400">(0 MB)</span>
+        <div class="space-y-4">
+          <!-- Local Video File Input (Drag & Drop Zone) -->
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1.5">Tệp video gốc (.mp4) — Kéo thả hoặc chọn tệp từ máy tính</label>
+            <input
+              type="file"
+              id="videoFileInput"
+              accept="video/mp4,video/*"
+              class="hidden"
+            />
+            <div
+              id="dropzone"
+              class="border-2 border-dashed border-slate-700 hover:border-indigo-500/70 bg-slate-950/70 rounded-xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center space-y-2 group"
+            >
+              <div class="w-12 h-12 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                </svg>
+              </div>
+              <div id="fileInfoText" class="space-y-1">
+                <p class="text-sm font-medium text-slate-200">
+                  Nhấp để chọn tệp video MP4 hoặc kéo thả vào đây
+                </p>
+                <p class="text-xs text-slate-500">Hỗ trợ các định dạng video MP4, MOV, MKV &bull; Nhúng phụ đề trực tiếp</p>
+              </div>
+              <div id="fileSelectedBadge" class="hidden mt-2 inline-flex items-center space-x-2 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-3 py-1 rounded-full text-xs font-mono">
+                <span id="selectedFileName">video.mp4</span>
+                <span id="selectedFileSize" class="text-slate-400">(0 MB)</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- Action Button -->
-        <div class="pt-2">
+          <!-- Action Button -->
+          <div class="pt-2">
+            <button
+              type="button"
+              id="btnStart"
+              class="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-semibold text-sm shadow-lg shadow-indigo-500/25 active:scale-[0.99] transition-all flex items-center justify-center space-x-2 disabled:opacity-50 disabled:pointer-events-none"
+            >
+              <svg id="btnSpinner" class="w-4 h-4 animate-spin hidden" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span id="btnStartText">Bắt đầu chuyển đổi & bóc phụ đề</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- PROGRESS BAR SECTION -->
+      <section id="progressSection" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-3 hidden">
+        <div class="flex items-center justify-between text-xs">
+          <span id="progressStepLabel" class="font-medium text-slate-300">Khởi tạo tác vụ...</span>
+          <span id="progressPercent" class="font-bold text-indigo-400">0%</span>
+        </div>
+        <div class="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-800">
+          <div id="progressBar" class="bg-gradient-to-r from-indigo-500 to-purple-500 h-full w-0 transition-all duration-500 rounded-full"></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- WORKSPACE 2: BATCH WORKFLOW SECTION -->
+    <div id="batchWorkflowSection" class="space-y-6 hidden">
+      <!-- Batch Upload Card -->
+      <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-indigo-400 flex items-center space-x-2">
+            <span>1. Thêm nhiều video vào hàng đợi xử lý AI</span>
+          </h2>
+          <span class="text-xs text-slate-400 font-mono">Tự động xếp hàng & nhúng tuần tự</span>
+        </div>
+        <div
+          id="batchDropzone"
+          class="border-2 border-dashed border-slate-700 hover:border-indigo-500/70 bg-slate-950/70 rounded-xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center space-y-2 group"
+        >
+          <div class="w-12 h-12 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+          </div>
+          <div class="space-y-1">
+            <p class="text-sm font-medium text-slate-200">
+              Kéo thả 5–20 video MP4 vào đây (hoặc nhấp để chọn tệp hàng loạt)
+            </p>
+            <p class="text-xs text-slate-500">Mỗi video sẽ được bóc tách và dịch tự động. Bạn có thể duyệt kịch bản từng video.</p>
+          </div>
+        </div>
+        <input type="file" id="batchFileInput" accept="video/mp4,video/*" multiple class="hidden" />
+      </section>
+
+      <!-- BATCH TASK QUEUE SECTION -->
+      <section id="batchSection" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2.5">
+            <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+            </div>
+            <div>
+              <h2 class="text-sm font-semibold uppercase tracking-wider text-indigo-400">Danh sách video trong hàng đợi</h2>
+              <span id="batchCountBadge" class="text-xs text-slate-400">0 video trong hàng đợi</span>
+            </div>
+          </div>
           <button
             type="button"
-            id="btnStart"
-            class="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-semibold text-sm shadow-lg shadow-indigo-500/25 active:scale-[0.99] transition-all flex items-center justify-center space-x-2 disabled:opacity-50 disabled:pointer-events-none"
+            id="btnBatchRenderAll"
+            disabled
+            class="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-medium text-xs shadow-md transition disabled:opacity-40 disabled:pointer-events-none flex items-center space-x-1.5"
           >
-            <svg id="btnSpinner" class="w-4 h-4 animate-spin hidden" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <span id="btnStartText">Bắt đầu chuyển đổi & bóc phụ đề</span>
+            🎬 Nhúng hàng loạt (0 video sẵn sàng)
           </button>
         </div>
-      </div>
-    </section>
+        <div id="batchQueueList" class="space-y-2.5 max-h-96 overflow-y-auto pr-1"></div>
+      </section>
+    </div>
 
-    <!-- BATCH TASK QUEUE SECTION -->
-    <section id="batchSection" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl hidden">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center space-x-2.5">
-          <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-          </div>
-          <div>
-            <h2 class="text-sm font-semibold uppercase tracking-wider text-indigo-400">Hàng đợi xử lý hàng loạt (Batch Queue)</h2>
-            <span id="batchCountBadge" class="text-xs text-slate-400">0 video trong hàng đợi</span>
-          </div>
-        </div>
-        <button
-          type="button"
-          id="btnBatchRenderAll"
-          disabled
-          class="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-medium text-xs shadow-md transition disabled:opacity-40 disabled:pointer-events-none flex items-center space-x-1.5"
-        >
-          🎬 Render hàng loạt (0 video sẵn sàng)
-        </button>
-      </div>
-      <div id="batchQueueList" class="space-y-2.5 max-h-96 overflow-y-auto pr-1"></div>
-    </section>
-
-    <!-- PROGRESS BAR SECTION -->
-    <section id="progressSection" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-3 hidden">
-      <div class="flex items-center justify-between text-xs">
-        <span id="progressStepLabel" class="font-medium text-slate-300">Khởi tạo tác vụ...</span>
-        <span id="progressPercent" class="font-bold text-indigo-400">0%</span>
-      </div>
-      <div class="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-800">
-        <div id="progressBar" class="bg-gradient-to-r from-indigo-500 to-purple-500 h-full w-0 transition-all duration-500 rounded-full"></div>
-      </div>
-    </section>
-
-    <!-- PHASE 2: INTERACTIVE CUE CARDS EDITOR & LIVE PREVIEW (Revealed when ACTION_REQUIRED) -->
+    <!-- XEM TRƯỚC VIDEO & HIỆU ĐÍNH PHỤ ĐỀ (Revealed when ACTION_REQUIRED) -->
     <section id="srtEditorSection" class="bg-slate-900 border-2 border-indigo-500/40 rounded-2xl p-6 space-y-5 hidden shadow-2xl relative">
       <div class="flex items-center justify-between border-b border-slate-800 pb-4">
         <div class="flex items-center space-x-2">
@@ -234,6 +316,14 @@
                 <span id="cueCountBadge" class="font-semibold px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[11px]">
                   0 câu phụ đề
                 </span>
+                <button
+                  type="button"
+                  id="btnAddCueTop"
+                  class="text-[11px] px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 transition flex items-center space-x-1"
+                  title="Thêm một câu phụ đề rỗng ở đầu danh sách (trước câu #1)"
+                >
+                  <span>➕ Thêm ở đầu</span>
+                </button>
                 <button
                   type="button"
                   id="btnToggleEditorMode"
@@ -495,7 +585,402 @@
     </div>
   </div>
 
+  <!-- SETTINGS CENTER MODAL -->
+  <div id="settingsModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4 opacity-0 pointer-events-none">
+    <div class="modal-dialog max-w-3xl w-full bg-[#12161f] border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+      
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/80">
+        <div class="flex items-center space-x-2.5">
+          <div class="w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-base">
+            ⚙️
+          </div>
+          <div>
+            <h2 class="text-sm font-bold text-white tracking-wide">Cài Đặt Hệ Thống &bull; Settings Center</h2>
+            <p class="text-[11px] text-slate-400">Tùy biến lưu trữ, mô hình AI Whisper, GPU & cấu hình phụ đề</p>
+          </div>
+        </div>
+        <button id="btnCloseSettingsModal" type="button" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition" title="Đóng (Esc)">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Modal Body (Left Sidebar + Right Content) -->
+      <div class="flex flex-1 overflow-hidden min-h-[420px]">
+        <!-- Left Sidebar Tabs -->
+        <div class="w-52 border-r border-slate-800/80 bg-slate-950/60 p-3 space-y-1 shrink-0 overflow-y-auto">
+          <button type="button" class="settings-tab-btn" data-tab="storage">
+            <span class="text-base">📁</span>
+            <span>Lưu trữ</span>
+          </button>
+          <button type="button" class="settings-tab-btn" data-tab="ai">
+            <span class="text-base">🤖</span>
+            <span>Mô hình AI</span>
+          </button>
+          <button type="button" class="settings-tab-btn" data-tab="hardware">
+            <span class="text-base">⚡</span>
+            <span>Phần cứng</span>
+          </button>
+          <button type="button" class="settings-tab-btn" data-tab="translation">
+            <span class="text-base">🌐</span>
+            <span>Dịch thuật</span>
+          </button>
+          <button type="button" class="settings-tab-btn" data-tab="subtitle">
+            <span class="text-base">🎨</span>
+            <span>Phụ đề mặc định</span>
+          </button>
+          <button type="button" class="settings-tab-btn" data-tab="system">
+            <span class="text-base">ℹ️</span>
+            <span>Hệ thống</span>
+          </button>
+        </div>
+
+        <!-- Right Content Tab Panels -->
+        <div class="flex-1 p-6 overflow-y-auto space-y-5 bg-slate-900/30">
+          
+          <!-- TAB 1: STORAGE -->
+          <div class="settings-tab-panel space-y-5" data-panel="storage">
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                Thư mục xuất video & phụ đề mặc định
+              </label>
+              <div class="flex items-center space-x-2">
+                <input
+                  type="text"
+                  id="settingOutputDir"
+                  readonly
+                  class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-mono text-indigo-300 focus:outline-none select-all"
+                  placeholder="Đang tải..."
+                />
+                <button
+                  type="button"
+                  id="btnBrowseOutputDir"
+                  class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-xl transition flex items-center space-x-1 shrink-0 shadow-sm"
+                  title="Mở hộp thoại chọn thư mục gốc Windows"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                  <span>Thay đổi...</span>
+                </button>
+                <button
+                  type="button"
+                  id="btnOpenOutputDir"
+                  class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl transition border border-slate-700 shrink-0"
+                  title="Mở thư mục trong Windows Explorer"
+                >
+                  ↗ Mở
+                </button>
+              </div>
+              <p class="text-[11px] text-slate-500 mt-1.5">Tất cả video thành phẩm, tệp phụ đề .srt và video gốc sẽ được lưu tại đây.</p>
+            </div>
+
+            <div class="border-t border-slate-800/80 pt-4 space-y-3">
+              <h3 class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Tự động dọn dẹp dung lượng</h3>
+              
+              <label class="flex items-start space-x-3 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 cursor-pointer hover:border-slate-700 transition">
+                <input type="checkbox" id="settingAutoCleanupAudio" class="mt-0.5 rounded accent-indigo-500 cursor-pointer">
+                <div>
+                  <span class="text-xs font-medium text-slate-200 block">Tự động xóa file âm thanh tách tạm (.mp3) sau khi bóc text</span>
+                  <span class="text-[11px] text-slate-500">Giúp tiết kiệm dung lượng ổ đĩa. Khuyên dùng: Bật.</span>
+                </div>
+              </label>
+
+              <label class="flex items-start space-x-3 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 cursor-pointer hover:border-slate-700 transition">
+                <input type="checkbox" id="settingAutoCleanupSource" class="mt-0.5 rounded accent-indigo-500 cursor-pointer">
+                <div>
+                  <span class="text-xs font-medium text-slate-200 block">Tự động xóa file video gốc sau khi nhúng phụ đề hoàn tất</span>
+                  <span class="text-[11px] text-slate-500">Chỉ giữ lại file final_video.mp4 thành phẩm. Khuyên dùng: Tắt.</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- TAB 2: AI MODEL -->
+          <div class="settings-tab-panel space-y-5 hidden" data-panel="ai">
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  Mô hình bóc băng giọng nói (Faster-Whisper AI)
+                </label>
+                <p class="text-[11px] text-slate-500">Mô hình được lưu trữ ngoại tuyến trên máy tính. Bạn có thể tải nhiều mô hình và chuyển đổi linh hoạt.</p>
+              </div>
+              <input type="hidden" id="settingWhisperModel" value="base" />
+            </div>
+
+            <!-- Model Manager Card List -->
+            <div id="modelsManagerContainer" class="space-y-2.5">
+              <div class="text-center py-6 text-xs text-slate-500">Đang tải danh sách mô hình...</div>
+            </div>
+
+            <div class="border-t border-slate-800/80 pt-4">
+              <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                Ngôn ngữ âm thanh gốc của video
+              </label>
+              <select id="settingWhisperLang" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                <option value="zh">Tiếng Trung Quốc (zh) — Douyin, Kuaishou, Bilibili [Khuyên dùng]</option>
+                <option value="en">Tiếng Anh (en) — YouTube, TikTok Quốc tế</option>
+                <option value="auto">Tự động nhận diện ngôn ngữ (Auto Detect)</option>
+                <option value="ja">Tiếng Nhật Bản (ja)</option>
+                <option value="ko">Tiếng Hàn Quốc (ko)</option>
+              </select>
+              <p class="text-[11px] text-slate-500 mt-1.5">Chỉ định rõ ngôn ngữ giúp Whisper nhận diện nhanh hơn 30% so với tự động đoán.</p>
+            </div>
+          </div>
+
+          <!-- TAB 3: HARDWARE -->
+          <div class="settings-tab-panel space-y-5 hidden" data-panel="hardware">
+            <!-- GPU Info Card -->
+            <div id="gpuInfoCard" class="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2"></div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  Thiết bị xử lý AI (Inference Device)
+                </label>
+                <select id="settingDevice" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                  <option value="auto">Tự động (Ưu tiên GPU NVIDIA nếu có)</option>
+                  <option value="cuda">NVIDIA GPU (CUDA float16) — Tốc độ cao nhất</option>
+                  <option value="cpu">CPU (int8) — Tiết kiệm điện, an toàn</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  Bộ mã hóa Video FFmpeg (Video Encoder)
+                </label>
+                <select id="settingEncoder" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                  <option value="auto">Tự động (Tự kích hoạt NVENC nếu hỗ trợ)</option>
+                  <option value="h264_nvenc">h264_nvenc (NVIDIA Hardware NVENC) — Siêu tốc</option>
+                  <option value="libx264">libx264 (CPU Software Encoder) — Chuẩn xác</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 4: TRANSLATION -->
+          <div class="settings-tab-panel space-y-5 hidden" data-panel="translation">
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                Công cụ dịch thuật (Translation Engine)
+              </label>
+              <select id="settingTransEngine" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                <option value="google_gtx">Google Dịch (Miễn phí) — Nhanh, không cần tài khoản hay API Key</option>
+                <option value="gemini">Google Gemini AI — Dịch văn phong tự nhiên theo ngữ cảnh (Cần API Key)</option>
+                <option value="openai">OpenAI GPT-4o mini — Dịch chuyên sâu (Cần API Key)</option>
+                <option value="deepl">DeepL API — Độ chính xác dịch thuật cao cấp (Cần API Key)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                API Key cá nhân (Tùy chọn)
+              </label>
+              <input
+                type="password"
+                id="settingTransApiKey"
+                class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                placeholder="Để trống nếu sử dụng Google Dịch miễn phí"
+              />
+              <p class="text-[11px] text-slate-500 mt-1.5">Khóa API được lưu cục bộ an toàn trên máy tính của bạn và không bao giờ chia sẻ ra ngoài.</p>
+            </div>
+          </div>
+
+          <!-- TAB 5: SUBTITLE PRESET -->
+          <div class="settings-tab-panel space-y-4 hidden" data-panel="subtitle">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <div class="flex justify-between text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  <span>Cỡ chữ mặc định</span>
+                  <span id="settingFontSizeVal" class="text-indigo-400 font-mono">20px</span>
+                </div>
+                <input type="range" id="settingFontSize" min="14" max="32" step="1" value="20" class="w-full accent-indigo-500 cursor-pointer h-2 bg-slate-800 rounded">
+              </div>
+
+              <div>
+                <div class="flex justify-between text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  <span>Khoảng cách lề dưới (Margin V)</span>
+                  <span id="settingMarginVVal" class="text-purple-400 font-mono">140px</span>
+                </div>
+                <input type="range" id="settingMarginV" min="40" max="260" step="5" value="140" class="w-full accent-purple-500 cursor-pointer h-2 bg-slate-800 rounded">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  Màu chữ phụ đề mặc định
+                </label>
+                <div class="flex items-center space-x-2">
+                  <input type="color" id="settingColorPicker" value="#ffff00" class="w-10 h-9 p-0.5 rounded-lg bg-slate-950 border border-slate-700 cursor-pointer">
+                  <input type="text" id="settingColorHex" value="#FFFF00" maxlength="7" class="w-28 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-200">
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  Phông chữ (Font Family)
+                </label>
+                <select id="settingFontName" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200">
+                  <option value="Arial Black">Arial Black (Đậm nét, dễ đọc nhất — Khuyên dùng)</option>
+                  <option value="Arial">Arial (Chuẩn thanh mảnh)</option>
+                  <option value="Montserrat">Montserrat (Hiện đại)</option>
+                  <option value="Tahoma">Tahoma</option>
+                  <option value="Segoe UI">Segoe UI</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Live Preview Box -->
+            <div class="border-t border-slate-800/80 pt-3">
+              <span class="text-[11px] font-semibold text-slate-400 block mb-2 uppercase tracking-wider">Xem trước phong cách phụ đề mặc định:</span>
+              <div class="h-28 bg-black rounded-xl border border-slate-800 flex items-center justify-center p-3 relative overflow-hidden">
+                <div class="absolute inset-0 bg-gradient-to-t from-slate-950/60 to-transparent pointer-events-none"></div>
+                <div id="subPresetPreview" class="text-center font-bold relative z-10 transition-all" style="text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 2px 6px rgba(0,0,0,0.8);">
+                  Đây là mẫu phụ đề hiển thị trên video
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 6: SYSTEM DIAGNOSTICS -->
+          <div class="settings-tab-panel space-y-4 hidden" data-panel="system">
+            <div class="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3 text-xs">
+              <div class="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                <span class="text-slate-400">Phiên bản ứng dụng:</span>
+                <span class="font-mono font-bold text-emerald-400">SubFlow AI v2.0 Desktop</span>
+              </div>
+              <div class="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                <span class="text-slate-400">Tệp cấu hình lưu trữ:</span>
+                <span class="font-mono text-slate-300 text-[11px] break-all">%APPDATA%\SubFlowAI\settings.json</span>
+              </div>
+              <div class="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                <span class="text-slate-400">Engine Nhúng Phụ Đề:</span>
+                <span class="font-mono text-indigo-400 font-semibold">FFmpeg v6.0+ (Hardsub Libass)</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-slate-400">Môi trường Render:</span>
+                <span class="font-mono text-slate-300">FastAPI &bull; Microsoft Edge WebView2</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Modal Footer Actions -->
+      <div class="flex items-center justify-between px-6 py-3.5 border-t border-slate-800 bg-slate-900/80">
+        <button
+          type="button"
+          id="btnResetSettings"
+          class="text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 px-3 py-1.5 rounded-lg border border-red-500/20 transition flex items-center space-x-1"
+        >
+          <span>🔄 Khôi phục mặc định</span>
+        </button>
+
+        <div class="flex items-center space-x-2">
+          <button
+            type="button"
+            id="btnCancelSettings"
+            class="px-4 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-xl transition"
+          >
+            Hủy
+          </button>
+          <button
+            type="button"
+            id="btnSaveSettings"
+            class="px-5 py-2 text-xs font-semibold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl shadow-lg shadow-emerald-500/20 transition flex items-center space-x-1.5"
+          >
+            <span>💾 Lưu Cài Đặt</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FIRST-RUN ONBOARDING & MODEL DOWNLOADER WIZARD -->
+  <div id="wizardModal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-[60] flex items-center justify-center p-4 opacity-0 pointer-events-none">
+    <div class="wizard-dialog max-w-lg w-full bg-[#12161f] border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col p-6 space-y-5 relative">
+      
+      <!-- Close button (dismissible) -->
+      <button id="btnSkipWizardTop" type="button" class="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition" title="Để sau">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+
+      <!-- Wizard Header -->
+      <div class="flex items-center space-x-3.5">
+        <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 p-0.5 shadow-lg shadow-indigo-500/30">
+          <div class="w-full h-full bg-[#12161f] rounded-[14px] flex items-center justify-center text-xl">
+            ✨
+          </div>
+        </div>
+        <div>
+          <h2 class="text-base font-bold text-white tracking-wide">Chào mừng bạn đến với SubFlow AI!</h2>
+          <p class="text-xs text-indigo-400 font-medium">Khởi tạo mô hình AI bóc tách phụ đề tự động</p>
+        </div>
+      </div>
+
+      <!-- Description -->
+      <p class="text-xs text-slate-300 leading-relaxed">
+        Để bóc tách giọng nói thành phụ đề tự động tốc độ cao và hoạt động 100% ngoại tuyến (offline) bảo mật trên máy tính của bạn, ứng dụng cần tải mô hình AI ban đầu.
+      </p>
+
+      <!-- Recommended Card -->
+      <div id="wizardCardBase" class="bg-slate-950/70 border-2 border-indigo-500/50 rounded-xl p-4 space-y-3 relative overflow-hidden">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <span class="text-sm font-bold text-white">Mô hình Base</span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              ⭐ Khuyên dùng
+            </span>
+          </div>
+          <span class="font-mono text-xs font-semibold text-indigo-300">~145 MB</span>
+        </div>
+        
+        <p class="text-[11px] text-slate-400 leading-normal">
+          Cân bằng tối ưu giữa tốc độ nhận diện và độ chuẩn xác. Tương thích mượt mà trên cả card đồ họa NVIDIA GPU và CPU thông thường.
+        </p>
+
+        <!-- Download Action Button -->
+        <button
+          type="button"
+          id="btnWizardDownloadBase"
+          class="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-500 via-purple-600 to-pink-500 hover:from-indigo-600 hover:to-purple-700 text-white font-bold text-xs shadow-lg shadow-indigo-500/25 transition-all flex items-center justify-center space-x-2"
+        >
+          <span>⚡ Tải mô hình Base (145 MB) & Bắt đầu</span>
+        </button>
+      </div>
+
+      <!-- Download Progress Area (hidden initially) -->
+      <div id="wizardProgressSection" class="p-4 rounded-xl bg-slate-950 border border-indigo-500/30 space-y-2.5 hidden">
+        <div class="flex items-center justify-between text-xs">
+          <span id="wizardStatusText" class="text-slate-300 font-medium truncate max-w-[280px]">Đang kết nối máy chủ mô hình...</span>
+          <span id="wizardPercentText" class="font-mono font-bold text-indigo-400">0%</span>
+        </div>
+        <div class="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-800">
+          <div id="wizardProgressBar" class="bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-400 h-full w-0 transition-all duration-300 rounded-full"></div>
+        </div>
+        <div class="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+          <span id="wizardSpeedText">0.0 MB/s</span>
+          <span id="wizardEtaText">Ước tính: Đang tính...</span>
+        </div>
+      </div>
+
+      <!-- Footer / Skip Option -->
+      <div class="flex items-center justify-between pt-1 text-xs">
+        <button
+          type="button"
+          id="btnSkipWizard"
+          class="text-slate-500 hover:text-slate-300 transition text-[11px]"
+        >
+          Để sau (tôi sẽ tải trong phần Cài đặt)
+        </button>
+        <span class="text-[11px] text-slate-500">SubFlow AI Desktop v2.0</span>
+      </div>
+
+    </div>
+  </div>
+
   <!-- JAVASCRIPT LOGIC -->
-  <script type="module" src="/js/app.js?v=2.4"></script>
+  <script type="module" src="/js/app.js?v=2.9"></script>
 </body>
 </html>

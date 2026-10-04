@@ -14,7 +14,16 @@ export function initEditor({ cueCardsContainer, srtTextarea, cueCountBadge, btnT
     const cues = getCues();
     cueCountBadge.textContent = `${cues.length} câu phụ đề`;
     if (cues.length === 0) {
-      cueCardsContainer.innerHTML = `<div class="text-center py-12 text-slate-500 text-xs">Chưa có câu phụ đề nào.</div>`;
+      cueCardsContainer.innerHTML = `
+        <div class="text-center py-12 text-slate-500 text-xs flex flex-col items-center gap-3">
+          <div>Chưa có câu phụ đề nào.</div>
+          <button type="button" id="btnAddFirstCue" class="px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition shadow-lg shadow-indigo-500/20 flex items-center space-x-1.5">
+            <span>➕ Thêm câu phụ đề đầu tiên</span>
+          </button>
+        </div>`;
+      cueCardsContainer.querySelector('#btnAddFirstCue')?.addEventListener('click', () => {
+        addCueAfter(-1);
+      });
       return;
     }
     cueCardsContainer.innerHTML = '';
@@ -41,6 +50,9 @@ export function initEditor({ cueCardsContainer, srtTextarea, cueCountBadge, btnT
             </div>
           </div>
           <div class="flex items-center space-x-1.5 opacity-80 group-hover:opacity-100 transition">
+            <button type="button" class="btn-add px-2 py-0.5 rounded text-[10px] bg-slate-800 hover:bg-indigo-500/20 text-slate-300 hover:text-indigo-300 border border-slate-700/60 hover:border-indigo-500/30 transition flex items-center space-x-1" title="Thêm câu phụ đề mới ngay sau mốc này">
+              <span>➕ Thêm</span>
+            </button>
             <button type="button" class="btn-split px-2 py-0.5 rounded text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition" title="Tách câu">✂️ Tách</button>
             ${!isLast ? '<button type="button" class="btn-merge px-2 py-0.5 rounded text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition" title="Gộp câu">🔗 Gộp</button>' : ''}
             <button type="button" class="btn-delete px-2 py-0.5 rounded text-[10px] bg-slate-800 hover:bg-red-500/20 text-slate-400 hover:text-red-400 border border-slate-700/60 hover:border-red-500/30 transition" title="Xóa câu này">🗑️ Xóa</button>
@@ -51,7 +63,7 @@ export function initEditor({ cueCardsContainer, srtTextarea, cueCountBadge, btnT
 
       // Click card -> jump to time and PAUSE (allows user to calmly inspect frame and tweak)
       card.addEventListener('click', (e) => {
-        if (e.target.closest('.btn-split') || e.target.closest('.btn-merge') || e.target.closest('.btn-delete') || e.target.closest('.inp-time') || e.target.closest('.btn-play-cue') || e.target.closest('.cue-text')) return;
+        if (e.target.closest('.btn-add') || e.target.closest('.btn-split') || e.target.closest('.btn-merge') || e.target.closest('.btn-delete') || e.target.closest('.inp-time') || e.target.closest('.btn-play-cue') || e.target.closest('.cue-text')) return;
         previewPlayer.currentTime = cue.start;
         try { previewPlayer.pause(); } catch(err) {}
         subOverlay.textContent = cue.text;
@@ -139,6 +151,10 @@ export function initEditor({ cueCardsContainer, srtTextarea, cueCountBadge, btnT
       });
 
       // Action buttons
+      card.querySelector('.btn-add')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        addCueAfter(index);
+      });
       card.querySelector('.btn-split').addEventListener('click', (e) => {
         e.stopPropagation();
         splitCue(index);
@@ -157,6 +173,110 @@ export function initEditor({ cueCardsContainer, srtTextarea, cueCountBadge, btnT
 
     cueCardsContainer.appendChild(fragment);
     setTimeout(() => cueCardsContainer.querySelectorAll('.cue-text').forEach(autoResizeTextarea), 50);
+  }
+
+  function addCueAfter(index) {
+    const cues = getCues();
+    let newStart = 0;
+    let newEnd = 1.5;
+
+    if (index === -1) {
+      // Adding at beginning (before cue #1) or when cues list is empty
+      if (cues.length > 0) {
+        newStart = 0;
+        const first = cues[0];
+        if (first.start >= 0.8) {
+          newEnd = Math.min(1.5, Math.round((first.start - 0.05) * 1000) / 1000);
+        } else {
+          newEnd = 1.2;
+          const shiftDelta = Math.round(((newEnd + 0.05) - first.start) * 1000) / 1000;
+          if (shiftDelta > 0) {
+            for (let i = 0; i < cues.length; i++) {
+              cues[i].start = Math.round((cues[i].start + shiftDelta) * 1000) / 1000;
+              cues[i].end = Math.round((cues[i].end + shiftDelta) * 1000) / 1000;
+              cues[i].startTimeStr = secondsToSRT(cues[i].start);
+              cues[i].endTimeStr = secondsToSRT(cues[i].end);
+            }
+          }
+        }
+        cues.unshift({
+          id: 0,
+          start: newStart,
+          end: newEnd,
+          startTimeStr: secondsToSRT(newStart),
+          endTimeStr: secondsToSRT(newEnd),
+          text: ''
+        });
+      } else {
+        newStart = Math.max(0, Math.floor(previewPlayer.currentTime * 10) / 10);
+        newEnd = Math.round((newStart + 1.5) * 1000) / 1000;
+        cues.push({
+          id: 1,
+          start: newStart,
+          end: newEnd,
+          startTimeStr: secondsToSRT(newStart),
+          endTimeStr: secondsToSRT(newEnd),
+          text: ''
+        });
+      }
+    } else {
+      const curr = cues[index];
+      newStart = Math.round((curr.end + 0.05) * 1000) / 1000;
+      const isLast = (index === cues.length - 1);
+
+      if (isLast) {
+        newEnd = Math.round((newStart + 1.5) * 1000) / 1000;
+      } else {
+        const next = cues[index + 1];
+        const gap = next.start - newStart;
+        if (gap >= 0.8) {
+          // Fits inside available gap without moving next cues
+          newEnd = Math.min(Math.round((newStart + 1.5) * 1000) / 1000, Math.round((next.start - 0.05) * 1000) / 1000);
+        } else {
+          // Gap is too tight -> assign 1.2s and push subsequent cues forward
+          newEnd = Math.round((newStart + 1.2) * 1000) / 1000;
+          const shiftDelta = Math.round(((newEnd + 0.05) - next.start) * 1000) / 1000;
+          if (shiftDelta > 0) {
+            for (let i = index + 1; i < cues.length; i++) {
+              cues[i].start = Math.round((cues[i].start + shiftDelta) * 1000) / 1000;
+              cues[i].end = Math.round((cues[i].end + shiftDelta) * 1000) / 1000;
+              cues[i].startTimeStr = secondsToSRT(cues[i].start);
+              cues[i].endTimeStr = secondsToSRT(cues[i].end);
+            }
+          }
+        }
+      }
+
+      cues.splice(index + 1, 0, {
+        id: 0,
+        start: newStart,
+        end: newEnd,
+        startTimeStr: secondsToSRT(newStart),
+        endTimeStr: secondsToSRT(newEnd),
+        text: ''
+      });
+    }
+
+    cues.forEach((c, idx) => c.id = idx + 1);
+    renderCueCards();
+    syncLiveOverlay();
+
+    // Pause video and position playhead at start of new cue
+    previewPlayer.currentTime = newStart;
+    try { previewPlayer.pause(); } catch(err) {}
+
+    // Focus and scroll to newly created cue card
+    const targetIdx = index === -1 ? 0 : index + 1;
+    setTimeout(() => {
+      const newCard = cueCardsContainer.querySelector(`.cue-card[data-index="${targetIdx}"]`);
+      if (newCard) {
+        newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const ta = newCard.querySelector('.cue-text');
+        if (ta) ta.focus();
+      }
+    }, 60);
+
+    appendLog(`Đã thêm câu mới #${targetIdx + 1} (${secondsToDisplay(newStart)} → ${secondsToDisplay(newEnd)}).`, 'info');
   }
 
   function splitCue(index) {
@@ -212,6 +332,12 @@ export function initEditor({ cueCardsContainer, srtTextarea, cueCountBadge, btnT
     syncLiveOverlay();
     appendLog(`Đã xóa câu #${index + 1}: "${removedText}..."`, 'warn');
   }
+
+  // Hook up button to add cue at top
+  const btnAddCueTop = document.getElementById('btnAddCueTop');
+  btnAddCueTop?.addEventListener('click', () => {
+    addCueAfter(-1);
+  });
 
   function updateSubOverlayStyle() {
     const color = subColorPicker.value;

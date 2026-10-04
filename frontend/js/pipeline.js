@@ -12,7 +12,7 @@ export function initPipeline({ appendLog, updateProgress, setProcessingState, se
     socket = new WebSocket(`${protocol}//${window.location.host}/ws/process`);
     socket.onopen = () => {
       updateConnectionStatus('processing');
-      appendLog('Đã kết nối WebSocket. Bắt đầu Phase 1...', 'system');
+      appendLog('Đã kết nối WebSocket. Bắt đầu bóc tách âm thanh & dịch thuật...', 'system');
       socket.send(JSON.stringify({ task_id: taskId }));
     };
     socket.onmessage = (event) => {

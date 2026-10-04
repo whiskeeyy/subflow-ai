@@ -1,4 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
+"""
+SubFlow AI - PyInstaller Spec File.
+Builds a standalone, native Windows Desktop package in --onedir mode
+with console window disabled (windowed mode) and bundled Edge Chromium (WebView2) GUI.
+"""
 import os
 import sys
 from pathlib import Path
@@ -8,7 +13,7 @@ block_cipher = None
 
 project_dir = Path.cwd().resolve()
 
-# Collect data files and hidden imports
+# 1. Collect Data Assets
 datas = [
     (str(project_dir / 'frontend'), 'frontend'),
     (str(project_dir / 'ffmpeg_bin'), 'ffmpeg_bin'),
@@ -17,7 +22,7 @@ datas = [
 if (project_dir / '.env').exists():
     datas.append((str(project_dir / '.env'), '.'))
 
-# Collect ctranslate2 and faster_whisper assets
+# Collect model engine data files (Faster-Whisper & CTranslate2)
 try:
     datas += collect_data_files('faster_whisper')
 except Exception:
@@ -28,6 +33,7 @@ try:
 except Exception:
     pass
 
+# 2. Comprehensive Hidden Imports
 hiddenimports = [
     'uvicorn',
     'uvicorn.logging',
@@ -40,6 +46,7 @@ hiddenimports = [
     'uvicorn.protocols.websockets.auto',
     'uvicorn.lifespan',
     'uvicorn.lifespan.on',
+    'engineio.async_drivers.asgi',
     'fastapi',
     'fastapi.staticfiles',
     'starlette',
@@ -49,10 +56,15 @@ hiddenimports = [
     'websockets',
     'faster_whisper',
     'ctranslate2',
+    'webview',
+    'webview.platforms.winforms',
+    'huggingface_hub',
     'deep_translator',
     'backend',
     'backend.app',
     'backend.config',
+    'backend.settings_manager',
+    'backend.model_downloader',
     'backend.batch_manager',
     'backend.history_store',
     'backend.workflows.video_pipeline',
@@ -61,6 +73,20 @@ hiddenimports = [
     'backend.tasks.translate_task',
     'backend.tasks.merge_task',
 ]
+
+# 3. Explicit Exclusions (Models & Outputs reside in %APPDATA%\SubFlowAI)
+excludes = [
+    'models',
+    'outputs',
+    'tkinter',
+    'matplotlib',
+    'scipy',
+]
+
+# Icon resolution
+icon_path = str(project_dir / 'frontend' / 'assets' / 'logo.ico')
+if not os.path.isfile(icon_path):
+    icon_path = None
 
 a = Analysis(
     ['main_desktop.py'],
@@ -71,7 +97,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=excludes,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -90,7 +116,8 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=True,
+    console=False,  # Windowed application (No black console window)
+    icon=icon_path,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

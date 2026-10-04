@@ -1,18 +1,21 @@
-// frontend/js/app.js — Main entry point (ES Module)
 import { parseSRT, serializeCuesToSRT, hexToAssBgr, downloadBlob } from './utils.js';
 import { initPlayer } from './player.js';
 import { initEditor } from './editor.js';
 import { initPipeline } from './pipeline.js';
 import { initHistoryDrawer } from './history.js';
 import { initBatchQueue } from './batch.js';
+import { initSettings, openSettingsModal } from './settings.js';
+import { initWizard } from './wizard.js';
 
 // --- State ---
 let cues = [];
 let originalAiSrt = '';
 let currentTaskId = '';
+let currentTaskTitle = '';
 let lastActiveCueId = null;
 let selectedFile = null;
 let lastOutputDir = '';
+let currentWorkspaceTab = 'single';
 
 // --- DOM Elements ---
 const $ = id => document.getElementById(id);
@@ -59,6 +62,17 @@ const btnOpenFolder = $('btnOpenFolder');
 const terminalLogs = $('terminalLogs');
 const btnClearLog = $('btnClearLog');
 const connectionStatus = $('connectionStatus');
+
+// --- Navbar & Workspace DOM Elements ---
+const tabBtnSingle = $('tabBtnSingle');
+const tabBtnBatch = $('tabBtnBatch');
+const singleWorkflowSection = $('singleWorkflowSection');
+const batchWorkflowSection = $('batchWorkflowSection');
+const batchDropzone = $('batchDropzone');
+const batchFileInput = $('batchFileInput');
+const btnNavOpenFolder = $('btnNavOpenFolder');
+const btnNavSettings = $('btnNavSettings');
+const hwStatusPill = $('hwStatusPill');
 
 // --- Helpers ---
 function appendLog(message, type = 'info') {
@@ -149,6 +163,7 @@ initHistoryDrawer();
 // --- Init Batch Queue ---
 function loadTaskIntoEditor({ taskId, srtContent, videoUrl, filename }) {
   currentTaskId = taskId;
+  currentTaskTitle = filename || taskId;
   originalAiSrt = srtContent;
   srtTextarea.value = srtContent;
   cues = parseSRT(srtContent);
@@ -161,9 +176,18 @@ function loadTaskIntoEditor({ taskId, srtContent, videoUrl, filename }) {
   srtEditorSection.classList.remove('hidden');
   resultCard.classList.add('hidden');
   srtEditorSection.scrollIntoView({ behavior: 'smooth' });
+  if (typeof setActiveEditorTaskId === 'function') {
+    setActiveEditorTaskId(taskId);
+  }
 }
 
-const { uploadBatchFiles, startPolling: startBatchPolling } = initBatchQueue({
+const {
+  uploadBatchFiles,
+  startPolling: startBatchPolling,
+  setActiveEditorTaskId,
+  getCurrentTasks,
+  fetchBatchStatus
+} = initBatchQueue({
   appendLog,
   loadTaskIntoEditor,
   subColorPicker,
@@ -173,6 +197,91 @@ const { uploadBatchFiles, startPolling: startBatchPolling } = initBatchQueue({
 });
 
 startBatchPolling();
+
+// --- Workspace Switching ---
+function switchWorkspace(tab) {
+  currentWorkspaceTab = tab;
+  if (tab === 'single') {
+    singleWorkflowSection?.classList.remove('hidden');
+    batchWorkflowSection?.classList.add('hidden');
+    tabBtnSingle?.classList.add('bg-slate-800', 'text-white', 'font-semibold', 'border-slate-700', 'shadow-sm');
+    tabBtnSingle?.classList.remove('text-slate-400');
+    tabBtnBatch?.classList.remove('bg-slate-800', 'text-white', 'font-semibold', 'border-slate-700', 'shadow-sm');
+    tabBtnBatch?.classList.add('text-slate-400');
+  } else if (tab === 'batch') {
+    batchWorkflowSection?.classList.remove('hidden');
+    singleWorkflowSection?.classList.add('hidden');
+    tabBtnBatch?.classList.add('bg-slate-800', 'text-white', 'font-semibold', 'border-slate-700', 'shadow-sm');
+    tabBtnBatch?.classList.remove('text-slate-400');
+    tabBtnSingle?.classList.remove('bg-slate-800', 'text-white', 'font-semibold', 'border-slate-700', 'shadow-sm');
+    tabBtnSingle?.classList.add('text-slate-400');
+    startBatchPolling();
+  }
+}
+
+tabBtnSingle?.addEventListener('click', () => switchWorkspace('single'));
+tabBtnBatch?.addEventListener('click', () => switchWorkspace('batch'));
+
+// Batch Dropzone Listeners
+batchDropzone?.addEventListener('click', () => batchFileInput?.click());
+batchDropzone?.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  batchDropzone.classList.add('border-indigo-500', 'bg-indigo-500/5');
+});
+batchDropzone?.addEventListener('dragleave', () => {
+  batchDropzone.classList.remove('border-indigo-500', 'bg-indigo-500/5');
+});
+batchDropzone?.addEventListener('drop', (e) => {
+  e.preventDefault();
+  batchDropzone.classList.remove('border-indigo-500', 'bg-indigo-500/5');
+  if (e.dataTransfer.files?.length) {
+    uploadBatchFiles(e.dataTransfer.files);
+  }
+});
+batchFileInput?.addEventListener('change', (e) => {
+  if (e.target.files?.length) {
+    uploadBatchFiles(e.target.files);
+  }
+});
+
+// --- Initialize Settings Center ---
+const { getSettings } = initSettings({
+  onSettingsUpdated: (newSettings) => {
+    appendLog('Cấu hình hệ thống đã được cập nhật thành công.', 'success');
+    if (newSettings?.subtitle_preset) {
+      const p = newSettings.subtitle_preset;
+      if (p.font_size && subFontSizeSlider) {
+        subFontSizeSlider.value = p.font_size;
+        if (subFontSizeVal) subFontSizeVal.textContent = `${p.font_size}px`;
+      }
+      updateSubOverlayStyle();
+    }
+  }
+});
+
+// --- First-Run Onboarding Wizard ---
+initWizard({
+  onWizardCompleted: () => {
+    appendLog('Đã hoàn tất cài đặt mô hình AI Base. Sẵn sàng bóc tách phụ đề!', 'success');
+  }
+});
+
+// Quick Navbar button bindings
+hwStatusPill?.addEventListener('click', () => openSettingsModal('hardware'));
+btnNavOpenFolder?.addEventListener('click', async () => {
+  try {
+    const s = getSettings();
+    const outDir = s?.storage?.output_dir || lastOutputDir || 'outputs';
+    const res = await fetch(`/api/open-folder?path=${encodeURIComponent(outDir)}`);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail);
+    }
+    appendLog(`Đã mở thư mục lưu trữ: ${outDir}`, 'success');
+  } catch (err) {
+    appendLog(`Lỗi mở thư mục: ${err.message}`, 'error');
+  }
+});
 
 // --- Event: pipeline:action_required ---
 window.addEventListener('pipeline:action_required', (e) => {
@@ -186,7 +295,7 @@ window.addEventListener('pipeline:action_required', (e) => {
   }
   srtEditorSection.classList.remove('hidden');
   srtEditorSection.scrollIntoView({ behavior: 'smooth' });
-  appendLog(`[Phase 1 Hoàn tất] ${data.message}`, 'warn');
+  appendLog(`[Bóc tách hoàn tất] ${data.message}`, 'warn');
 });
 
 // --- History events ---
@@ -236,6 +345,7 @@ dropzone.addEventListener('drop', (e) => {
   dropzone.classList.remove('border-indigo-500', 'bg-indigo-500/5');
   if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
     if (e.dataTransfer.files.length > 1) {
+      switchWorkspace('batch');
       uploadBatchFiles(e.dataTransfer.files);
     } else {
       handleFileSelect(e.dataTransfer.files[0]);
@@ -245,6 +355,7 @@ dropzone.addEventListener('drop', (e) => {
 videoFileInput.addEventListener('change', (e) => {
   if (e.target.files && e.target.files.length > 0) {
     if (e.target.files.length > 1) {
+      switchWorkspace('batch');
       uploadBatchFiles(e.target.files);
     } else {
       handleFileSelect(e.target.files[0]);
@@ -305,7 +416,7 @@ btnConfirmSrt.addEventListener('click', async () => {
     alert('Nội dung phụ đề không được để trống.');
     return;
   }
-  setSubmittingState(true);
+  
   const editedSrt = serializeCuesToSRT(cues);
   const previewHeight = previewVideoWrapper.clientHeight || 400;
   const fontPx = parseInt(subFontSizeSlider.value, 10);
@@ -318,15 +429,60 @@ btnConfirmSrt.addEventListener('click', async () => {
     margin_v: assMarginV,
     play_res_y: 1080
   };
-  appendLog(`Render phụ đề (${cues.length} câu) - Font: ${assFontSize}px, Lề: ${marginPercent}%...`, 'system');
-  updateProgress(80, 'Đang nhúng phụ đề bằng FFmpeg...');
-  try {
-    await sendPhase2(editedSrt, subStyle);
-  } catch(err) {
-    setSubmittingState(false);
-    appendLog(`Lỗi: ${err.message}`, 'error');
-    alert(`Đã xảy ra lỗi: ${err.message}`);
-    setProcessingState(false);
+
+  const allBatchTasks = typeof getCurrentTasks === 'function' ? getCurrentTasks() : [];
+  const isBatchTask = allBatchTasks.some(t => t.task_id === currentTaskId);
+
+  if (isBatchTask && currentTaskId) {
+    setSubmittingState(true);
+    appendLog(`Lưu kịch bản và bắt đầu nhúng phụ đề cho "${currentTaskTitle || currentTaskId}"...`, 'system');
+    try {
+      // 1. Lưu SRT đã sửa
+      await fetch(`/api/batch/task/${currentTaskId}/save-srt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ srt_content: editedSrt })
+      });
+
+      // 2. Kích hoạt lệnh nhúng (non-blocking)
+      const res = await fetch('/api/batch/render-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: currentTaskId, sub_style: subStyle })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Lỗi gửi lệnh nhúng');
+
+      appendLog(`Đã gửi lệnh nhúng phụ đề cho "${currentTaskTitle || currentTaskId}"! Video đang được xử lý trong danh sách hàng đợi.`, 'success');
+      
+      if (typeof fetchBatchStatus === 'function') fetchBatchStatus();
+
+      // Mở khóa nút bấm để user có thể tiếp tục thao tác
+      setSubmittingState(false, true);
+
+      // Gợi ý video tiếp theo nếu có video chờ duyệt
+      const nextWaiting = allBatchTasks.find(t => t.status === 'waiting_review' && t.task_id !== currentTaskId);
+      if (nextWaiting) {
+        appendLog(`Gợi ý: Video "${nextWaiting.filename}" đang chờ duyệt kịch bản. Bạn có thể bấm "Duyệt & Xem trước" ở trên để chỉnh sửa ngay!`, 'info');
+      }
+    } catch(err) {
+      setSubmittingState(false);
+      appendLog(`Lỗi: ${err.message}`, 'error');
+      alert(`Đã xảy ra lỗi: ${err.message}`);
+    }
+  } else {
+    // Single upload WebSocket flow
+    setSubmittingState(true);
+    appendLog(`Nhúng phụ đề (${cues.length} câu) - Font: ${assFontSize}px, Lề: ${marginPercent}%...`, 'system');
+    updateProgress(80, 'Đang nhúng phụ đề bằng FFmpeg...');
+    try {
+      await sendPhase2(editedSrt, subStyle);
+    } catch(err) {
+      setSubmittingState(false);
+      appendLog(`Lỗi: ${err.message}`, 'error');
+      alert(`Đã xảy ra lỗi: ${err.message}`);
+      setProcessingState(false);
+    }
   }
 });
 

@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-from backend.config import OUTPUTS_DIR
+from backend.settings_manager import settings_manager
 from backend.workflows.video_pipeline import VideoRepurposePipeline
 from backend.tasks.merge_task import burn_subtitles_to_video
 from backend.history_store import mark_task_done, create_task_entry
@@ -74,7 +74,7 @@ class BatchManager:
             return False
 
     async def _process_queue(self):
-        """Continuously pulls tasks from queue and executes Phase 1 sequentially."""
+        """Continuously pulls tasks from queue and executes audio extraction & translation sequentially."""
         logger.info("Batch Queue processor is running...")
         while True:
             try:
@@ -84,9 +84,9 @@ class BatchManager:
                     self._queue.task_done()
                     continue
 
-                task["status"] = "processing_phase1"
+                task["status"] = "processing"
                 task["percent"] = 10
-                task["message"] = "Bắt đầu bóc tách & dịch AI..."
+                task["message"] = "Bắt đầu bóc tách & dịch thuật AI..."
 
                 async def emitter(event: dict):
                     status = event.get("status")
@@ -96,7 +96,7 @@ class BatchManager:
                     elif status == "ACTION_REQUIRED":
                         task["status"] = "waiting_review"
                         task["percent"] = 75
-                        task["message"] = "Đã sẵn sàng duyệt kịch bản!"
+                        task["message"] = "Đã dịch xong. Chờ duyệt kịch bản!"
                     elif status == "ERROR":
                         task["status"] = "error"
                         task["error"] = event.get("message", "Lỗi không xác định")
@@ -108,7 +108,7 @@ class BatchManager:
                     task["percent"] = 75
                     task["message"] = "Đã dịch xong. Chờ duyệt kịch bản!"
                 except Exception as exc:
-                    logger.error(f"Batch task {task_id} failed in Phase 1: {exc}", exc_info=True)
+                    logger.error(f"Batch task {task_id} failed during transcription/translation: {exc}", exc_info=True)
                     task["status"] = "error"
                     task["error"] = str(exc)
                     task["message"] = f"Lỗi: {str(exc)}"
@@ -121,13 +121,50 @@ class BatchManager:
                 logger.error(f"Unexpected error in batch queue worker: {e}", exc_info=True)
                 await asyncio.sleep(1)
 
+    def trigger_render_task(self, task_id: str, sub_style: Optional[dict] = None) -> Dict[str, Any]:
+        """Kích hoạt nhúng phụ đề cho 1 tác vụ chạy bất đồng bộ (non-blocking)."""
+        outputs_dir = settings_manager.get_output_dir()
+        task = self._tasks.get(task_id)
+        if not task:
+            task_dir = outputs_dir / task_id
+            if task_dir.exists():
+                task = {
+                    "task_id": task_id,
+                    "filename": task_id,
+                    "status": "waiting_review",
+                    "percent": 75,
+                    "message": "Sẵn sàng duyệt",
+                    "video_url": f"/outputs/{task_id}/video_goc.mp4",
+                    "srt_url": f"/outputs/{task_id}/sub_viet.srt",
+                    "final_video_url": f"/outputs/{task_id}/final_video.mp4",
+                    "error": None
+                }
+                self._tasks[task_id] = task
+            else:
+                raise ValueError(f"Task {task_id} không tồn tại trong hàng đợi.")
+
+        task["status"] = "rendering"
+        task["percent"] = 80
+        task["message"] = "Đang chuẩn bị nhúng phụ đề..."
+        asyncio.create_task(self._safe_render_task(task_id, sub_style))
+        return task
+
+    async def _safe_render_task(self, task_id: str, sub_style: Optional[dict] = None):
+        """Thực thi nhúng phụ đề tuần tự qua render_lock để bảo vệ tài nguyên GPU/CPU."""
+        async with self._render_lock:
+            try:
+                await self.render_task(task_id, sub_style)
+            except Exception as e:
+                logger.error(f"Render failed for {task_id}: {e}", exc_info=True)
+
     async def render_task(self, task_id: str, sub_style: Optional[dict] = None) -> Dict[str, Any]:
         """Renders hardsubs for a single task."""
         task = self._tasks.get(task_id)
         if not task:
             raise ValueError(f"Task {task_id} không tồn tại trong hàng đợi.")
 
-        task_dir = OUTPUTS_DIR / task_id
+        outputs_dir = settings_manager.get_output_dir()
+        task_dir = outputs_dir / task_id
         video_path = task_dir / "video_goc.mp4"
         srt_path = task_dir / "sub_viet.srt"
         final_video_path = task_dir / "final_video.mp4"

@@ -3,7 +3,8 @@ import logging
 from pathlib import Path
 from typing import Callable, Awaitable, Optional
 
-from backend.config import OUTPUTS_DIR, OPENAI_API_KEY
+from backend.config import OPENAI_API_KEY
+from backend.settings_manager import settings_manager
 from backend.tasks.extract_task import extract_audio_from_video
 from backend.tasks.transcribe_task import transcribe_audio
 from backend.tasks.translate_task import translate_srt_to_vietnamese
@@ -27,8 +28,8 @@ class PipelineState:
 class VideoRepurposePipeline:
     """
     Subtitles-Only Hardsub Pipeline (with Real-time Interactive Video-Sub Preview):
-    - Phase 1: FFmpeg Audio Extraction -> faster-whisper STT -> Google Translate Engine -> Emit ACTION_REQUIRED.
-    - Phase 2: Save edited SRT -> Burn Hardsub directly into video (preserving original audio) -> Emit SUCCESS.
+    - Audio Extraction -> faster-whisper STT -> Google Translate Engine -> Emit ACTION_REQUIRED.
+    - Save edited SRT -> Burn Hardsub directly into video (preserving original audio) -> Emit SUCCESS.
     """
 
     def __init__(
@@ -38,7 +39,8 @@ class VideoRepurposePipeline:
     ):
         raw_id = task_id.replace("task_", "")
         self.task_id = f"task_{raw_id}"
-        self.task_dir = OUTPUTS_DIR / self.task_id
+        self.output_dir = settings_manager.get_output_dir()
+        self.task_dir = self.output_dir / self.task_id
         self.task_dir.mkdir(parents=True, exist_ok=True)
         self.emitter = emitter
         self.state = PipelineState.INIT
@@ -99,13 +101,14 @@ class VideoRepurposePipeline:
                 output_srt_path=str(chinese_srt_path)
             )
 
-            # Auto-Clean: Remove temporary audio_goc.mp3 to save disk space
-            try:
-                if self.audio_path.exists():
-                    self.audio_path.unlink()
-                    logger.info(f"Auto-Clean: Đã xóa file âm thanh tạm {self.audio_path.name}")
-            except Exception as e:
-                logger.warning(f"Auto-Clean: Không thể xóa {self.audio_path}: {e}")
+            # Auto-Clean: Remove temporary audio_goc.mp3 based on settings
+            if settings_manager.get_settings().get("storage", {}).get("auto_cleanup_audio", True):
+                try:
+                    if self.audio_path.exists():
+                        self.audio_path.unlink()
+                        logger.info(f"Auto-Clean: Đã xóa file âm thanh tạm {self.audio_path.name}")
+                except Exception as e:
+                    logger.warning(f"Auto-Clean: Không thể xóa {self.audio_path}: {e}")
 
             # Step 3: Translate to Vietnamese (75%)
             self.state = PipelineState.TRANSLATING
@@ -142,7 +145,7 @@ class VideoRepurposePipeline:
             self.state = PipelineState.ERROR
             await self.emit({
                 "status": "ERROR",
-                "message": f"Lỗi ở Phase 1: {str(e)}"
+                "message": f"Lỗi bóc tách & dịch thuật: {str(e)}"
             })
             raise
 
@@ -157,11 +160,13 @@ class VideoRepurposePipeline:
             self.state = PipelineState.BURNING_SUB
             self.final_srt = edited_srt
 
-            # Unpack subtitle styling options
+            # Unpack subtitle styling options with settings fallback
+            preset = settings_manager.get_settings().get("subtitle_preset", {})
             sub_cfg = sub_style or {}
-            primary_color = sub_cfg.get("color_bgr", "&H0000FFFF&")
-            font_size = int(sub_cfg.get("font_size", 54))
-            margin_v = int(sub_cfg.get("margin_v", 90))
+            primary_color = sub_cfg.get("color_bgr") or preset.get("color_bgr", "&H0000FFFF&")
+            font_size = int(sub_cfg.get("font_size") or preset.get("font_size", 54))
+            margin_v = int(sub_cfg.get("margin_v") or preset.get("margin_v", 90))
+            font_name = sub_cfg.get("font_name") or preset.get("font_name", "Arial Black")
             play_res_y = int(sub_cfg.get("play_res_y", 1080))
 
             final_srt_path = self.task_dir / "sub_viet.srt"
@@ -186,6 +191,7 @@ class VideoRepurposePipeline:
                 primary_color=primary_color,
                 font_size=font_size,
                 margin_v=margin_v,
+                font_name=font_name,
                 play_res_y=play_res_y,
                 use_gpu=True
             )
@@ -225,6 +231,6 @@ class VideoRepurposePipeline:
             self.state = PipelineState.ERROR
             await self.emit({
                 "status": "ERROR",
-                "message": f"Lỗi ở Phase 2: {str(e)}"
+                "message": f"Lỗi nhúng phụ đề: {str(e)}"
             })
             raise

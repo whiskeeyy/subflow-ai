@@ -17,16 +17,17 @@ from fastapi.responses import FileResponse, JSONResponse
 import asyncio
 from backend.config import (
     FRONTEND_DIR,
-    OUTPUTS_DIR,
     OPENAI_API_KEY,
     VOICE_OPTIONS,
     RATE_OPTIONS,
     DEFAULT_VOICE,
     DEFAULT_RATE
 )
+from backend.settings_manager import settings_manager, diagnose_system
 from backend.workflows.video_pipeline import VideoRepurposePipeline
 from backend.tasks.merge_task import burn_subtitles_to_video
 from backend.batch_manager import batch_manager
+from backend.model_downloader import model_downloader
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("backend.app")
@@ -42,7 +43,7 @@ app.add_middleware(
 )
 
 # Mount outputs directory so browser can stream preview audio/video
-app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
+app.mount("/outputs", StaticFiles(directory=str(settings_manager.get_output_dir())), name="outputs")
 
 
 @app.get("/api/config")
@@ -98,7 +99,8 @@ async def upload_video(file: UploadFile = File(...)):
     # Generate a clean short unique task ID
     short_uuid = uuid.uuid4().hex[:8]
     task_id = f"task_{short_uuid}"
-    task_dir = OUTPUTS_DIR / task_id
+    outputs_dir = settings_manager.get_output_dir()
+    task_dir = outputs_dir / task_id
     task_dir.mkdir(parents=True, exist_ok=True)
 
     video_dest = task_dir / "video_goc.mp4"
@@ -139,6 +141,7 @@ async def upload_batch_videos(files: List[UploadFile] = File(...)):
     if not files:
         raise HTTPException(status_code=400, detail="Không có tệp nào được tải lên.")
 
+    outputs_dir = settings_manager.get_output_dir()
     results = []
     for file in files:
         if not file.filename:
@@ -146,7 +149,7 @@ async def upload_batch_videos(files: List[UploadFile] = File(...)):
 
         short_uuid = uuid.uuid4().hex[:8]
         task_id = f"task_{short_uuid}"
-        task_dir = OUTPUTS_DIR / task_id
+        task_dir = outputs_dir / task_id
         task_dir.mkdir(parents=True, exist_ok=True)
         video_dest = task_dir / "video_goc.mp4"
 
@@ -180,7 +183,8 @@ async def get_batch_status():
 async def get_batch_task_details(task_id: str):
     """Returns task info and current SRT content for review/editing."""
     task = batch_manager.get_task(task_id)
-    task_dir = OUTPUTS_DIR / task_id
+    outputs_dir = settings_manager.get_output_dir()
+    task_dir = outputs_dir / task_id
     srt_file = task_dir / "sub_viet.srt"
     srt_content = ""
     if srt_file.exists():
@@ -208,14 +212,14 @@ async def save_batch_task_srt(task_id: str, payload: dict):
 
 @app.post("/api/batch/render-task")
 async def render_single_batch_task(payload: dict):
-    """Renders hardsubs for a single batch task."""
+    """Kích hoạt nhúng phụ đề cho 1 tác vụ (non-blocking)."""
     task_id = payload.get("task_id")
     sub_style = payload.get("sub_style", {})
     if not task_id:
         raise HTTPException(status_code=400, detail="task_id không được để trống.")
     try:
-        res = await batch_manager.render_task(task_id, sub_style)
-        return res
+        task = batch_manager.trigger_render_task(task_id, sub_style)
+        return {"status": "success", "task": task, "message": "Đã bắt đầu nhúng phụ đề vào video."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -228,6 +232,153 @@ async def render_all_batch_tasks(payload: dict):
     return {"status": "success", "rendered_count": len(results), "tasks": results}
 
 
+# ---------------------------------------------------------------------------
+# Settings & Hardware Diagnostics Endpoints
+# ---------------------------------------------------------------------------
+@app.get("/api/settings")
+async def get_settings_endpoint():
+    """
+    Returns current configuration combined with hardware and system diagnostics.
+    """
+    settings = settings_manager.get_settings()
+    diagnostics = await asyncio.to_thread(diagnose_system)
+    return {
+        "settings": settings,
+        "diagnostics": diagnostics
+    }
+
+
+@app.post("/api/settings")
+async def update_settings_endpoint(payload: dict):
+    """
+    Accepts partial or complete settings.
+    Validates output directory path and write permissions.
+    Writes to settings.json atomically.
+    """
+    try:
+        updated = settings_manager.save_settings(payload)
+        # Remount /outputs if directory changed
+        new_output_dir = settings_manager.get_output_dir()
+        app.mount("/outputs", StaticFiles(directory=str(new_output_dir)), name="outputs")
+        return {
+            "status": "success",
+            "message": "Đã lưu cài đặt thành công.",
+            "settings": updated
+        }
+    except Exception as e:
+        logger.error(f"Error saving settings: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/settings/browse-folder")
+async def browse_folder_endpoint():
+    """
+    Opens native Windows folder picker without external GUI dependencies:
+    powershell -NoProfile -Command "(New-Object -ComObject Shell.Application).BrowseForFolder(0, 'Chọn thư mục lưu trữ video thành phẩm', 0, 0).Self.Path"
+    Executes in a thread with a 60s timeout so the server doesn't hang.
+    """
+    if sys.platform != "win32":
+        return {"path": None, "message": "Chức năng chọn thư mục chỉ hỗ trợ trên hệ điều hành Windows."}
+
+    cmd = '(New-Object -ComObject Shell.Application).BrowseForFolder(0, "Chọn thư mục lưu trữ video thành phẩm", 0, 0).Self.Path'
+
+    def run_picker() -> Optional[str]:
+        try:
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", cmd],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            out = res.stdout.strip()
+            return out if out else None
+        except subprocess.TimeoutExpired:
+            logger.warning("Folder picker timed out (60s).")
+            return None
+        except Exception as err:
+            logger.error(f"Error running folder picker: {err}")
+            return None
+
+    selected_path = await asyncio.to_thread(run_picker)
+    return {"path": selected_path}
+
+
+@app.post("/api/settings/reset")
+async def reset_settings_endpoint():
+    """
+    Resets settings.json to factory defaults and returns the refreshed configuration.
+    """
+    try:
+        defaults = settings_manager.reset_settings()
+        return {
+            "status": "success",
+            "message": "Đã khôi phục cài đặt gốc.",
+            "settings": defaults
+        }
+    except Exception as e:
+        logger.error(f"Error resetting settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Offline Model Downloader & Management Endpoints
+# ---------------------------------------------------------------------------
+@app.get("/api/models")
+async def get_models():
+    """
+    Returns the list of supported Faster-Whisper models, their sizes,
+    local installation status, and active default flag.
+    """
+    return model_downloader.get_all_models()
+
+
+@app.post("/api/models/download")
+async def download_model(payload: dict):
+    """
+    Triggers downloading a Faster-Whisper model in a background daemon thread.
+    Payload: {"model_id": "base"}
+    """
+    model_id = payload.get("model_id", "").strip().lower()
+    if not model_id:
+        raise HTTPException(status_code=400, detail="model_id không được để trống.")
+    try:
+        res = model_downloader.start_download(model_id)
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except RuntimeError as re:
+        raise HTTPException(status_code=409, detail=str(re))
+    except Exception as e:
+        logger.error(f"Lỗi khi bắt đầu tải mô hình: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/models/progress")
+async def get_model_progress():
+    """
+    Returns the live progress snapshot of the active model download.
+    """
+    return model_downloader.get_progress()
+
+
+@app.delete("/api/models/{model_id}")
+async def delete_model(model_id: str, force: bool = False):
+    """
+    Safely removes a downloaded model folder from disk.
+    Rejects deletion if model is the current default unless force=True.
+    """
+    try:
+        model_downloader.delete_model(model_id, force=force)
+        return {"status": "deleted", "model_id": model_id}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except FileNotFoundError as fe:
+        raise HTTPException(status_code=404, detail=str(fe))
+    except Exception as e:
+        logger.error(f"Lỗi khi xóa mô hình {model_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/open-folder")
 async def open_folder(path: str = Query(..., description="Target directory path to open")):
     """
@@ -235,7 +386,7 @@ async def open_folder(path: str = Query(..., description="Target directory path 
     Includes path traversal validation.
     """
     target = Path(path).resolve()
-    base_outputs = OUTPUTS_DIR.resolve()
+    base_outputs = settings_manager.get_output_dir().resolve()
 
     if not str(target).startswith(str(base_outputs)) or not target.exists():
         raise HTTPException(status_code=400, detail="Đường dẫn không hợp lệ hoặc không tồn tại.")
@@ -267,7 +418,8 @@ async def re_render_subtitles(payload: dict):
     if not task_id or not edited_srt:
         raise HTTPException(status_code=400, detail="task_id và edited_srt không được để trống.")
 
-    task_dir = OUTPUTS_DIR / task_id
+    outputs_dir = settings_manager.get_output_dir()
+    task_dir = outputs_dir / task_id
     video_path = task_dir / "video_goc.mp4"
     final_srt_path = task_dir / "sub_viet.srt"
     final_video_path = task_dir / "final_video.mp4"
@@ -278,10 +430,12 @@ async def re_render_subtitles(payload: dict):
     # Save updated SRT
     final_srt_path.write_text(edited_srt, encoding="utf-8")
 
-    # Unpack styling
-    primary_color = sub_style.get("color_bgr", "&H0000FFFF&")
-    font_size = int(sub_style.get("font_size", 54))
-    margin_v = int(sub_style.get("margin_v", 90))
+    # Unpack styling with settings fallback
+    preset = settings_manager.get_settings().get("subtitle_preset", {})
+    primary_color = sub_style.get("color_bgr") or preset.get("color_bgr", "&H0000FFFF&")
+    font_size = int(sub_style.get("font_size") or preset.get("font_size", 54))
+    margin_v = int(sub_style.get("margin_v") or preset.get("margin_v", 90))
+    font_name = sub_style.get("font_name") or preset.get("font_name", "Arial Black")
     play_res_y = int(sub_style.get("play_res_y", 1080))
 
     try:
@@ -293,6 +447,7 @@ async def re_render_subtitles(payload: dict):
             primary_color=primary_color,
             font_size=font_size,
             margin_v=margin_v,
+            font_name=font_name,
             play_res_y=play_res_y,
             use_gpu=True
         )

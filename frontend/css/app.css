@@ -44,3 +44,35 @@
 .history-item:hover {
   background: #1e293b;
 }
+
+/* Settings Modal */
+#settingsModal {
+  transition: opacity 0.25s ease-out;
+}
+#settingsModal .modal-dialog {
+  transition: transform 0.25s ease-out;
+  transform: scale(0.96);
+}
+#settingsModal.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+#settingsModal.open .modal-dialog {
+  transform: scale(1);
+}
+
+/* First-Run Wizard Modal */
+#wizardModal {
+  transition: opacity 0.25s ease-out;
+}
+#wizardModal .wizard-dialog {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: scale(0.95);
+}
+#wizardModal.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+#wizardModal.open .wizard-dialog {
+  transform: scale(1);
+}
