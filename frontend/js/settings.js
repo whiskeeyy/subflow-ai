@@ -1,5 +1,6 @@
 // frontend/js/settings.js — Dynamic Settings Center & Hardware Diagnostics
 import { hexToAssBgr } from './utils.js';
+import { showConfirmModal } from './ui_dialog.js';
 
 let currentSettings = null;
 let currentDiagnostics = null;
@@ -308,7 +309,14 @@ export function renderModelsManager(models) {
     });
 
     card.querySelector('.btn-del-model')?.addEventListener('click', async () => {
-      if (confirm(`Bạn có chắc muốn xóa mô hình '${m.name}' khỏi máy tính để giải phóng dung lượng?`)) {
+      const confirmed = await showConfirmModal({
+        title: 'Xóa mô hình AI',
+        message: `Bạn có chắc muốn xóa mô hình '${m.name}' khỏi máy tính để giải phóng dung lượng không?`,
+        confirmText: 'Xóa mô hình',
+        cancelText: 'Giữ lại',
+        isDanger: true
+      });
+      if (confirmed) {
         await deleteModelFromDisk(m.id);
       }
     });
@@ -535,7 +543,14 @@ async function handleSaveSettings() {
 }
 
 async function handleResetSettings() {
-  if (!confirm('Bạn có chắc chắn muốn khôi phục toàn bộ cài đặt về mặc định của nhà sản xuất?')) {
+  const confirmed = await showConfirmModal({
+    title: 'Khôi phục cài đặt gốc',
+    message: 'Bạn có chắc chắn muốn khôi phục toàn bộ cài đặt về mặc định của nhà sản xuất? Các cấu hình hiện tại sẽ được làm mới.',
+    confirmText: 'Khôi phục mặc định',
+    cancelText: 'Hủy bỏ',
+    isDanger: true
+  });
+  if (!confirmed) {
     return;
   }
 

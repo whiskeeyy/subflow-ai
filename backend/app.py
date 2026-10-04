@@ -7,7 +7,7 @@ import logging
 import subprocess
 import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -282,13 +282,18 @@ async def browse_folder_endpoint():
 
     cmd = '(New-Object -ComObject Shell.Application).BrowseForFolder(0, "Chọn thư mục lưu trữ video thành phẩm", 0, 0).Self.Path'
 
+    sub_kwargs = {}
+    if sys.platform == "win32":
+        sub_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
     def run_picker() -> Optional[str]:
         try:
             res = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", cmd],
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60,
+                **sub_kwargs
             )
             out = res.stdout.strip()
             return out if out else None
@@ -469,15 +474,41 @@ async def re_render_subtitles(payload: dict):
     }
 
 
+active_pipelines: Dict[str, VideoRepurposePipeline] = {}
+
+
+@app.post("/api/pipeline/cancel")
+async def cancel_pipeline_endpoint(payload: dict):
+    """
+    Cancels an actively running single video or batch pipeline task.
+    """
+    task_id = payload.get("task_id", "").strip()
+    if not task_id:
+        raise HTTPException(status_code=400, detail="task_id không được để trống.")
+
+    cancelled = False
+    if task_id in active_pipelines:
+        active_pipelines[task_id].cancel()
+        cancelled = True
+
+    return {
+        "status": "success",
+        "task_id": task_id,
+        "cancelled": cancelled,
+        "message": "Đã gửi tín hiệu hủy tác vụ." if cancelled else "Không có tác vụ nào đang chạy với task_id này."
+    }
+
+
 @app.websocket("/ws/process")
 async def websocket_process_endpoint(websocket: WebSocket):
     """
     Two-Phase Human-in-the-loop WebSocket handler for local uploaded files:
-    1. Client sends { "task_id": str, "voice": str, "rate": str }
-    2. Server runs Phase 1 (FFmpeg Audio Extraction -> Whisper STT -> GPT-4o-mini Translation)
+    1. Client sends { "task_id": str }
+    2. Server runs Phase 1 (FFmpeg Audio Extraction -> Whisper STT -> Translation)
        and emits ACTION_REQUIRED with srt_content.
-    3. Client sends { "action": "RESUME_WITH_SCRIPT", "edited_srt": str }
-    4. Server runs Phase 2 (Edge-TTS Speech Synthesis -> Output Bundle) and emits SUCCESS.
+    3. Client sends { "action": "RESUME_WITH_SCRIPT", "edited_srt": str, "sub_style": dict }
+    4. Server runs Phase 2 (FFmpeg Hardsub Video Burn) and emits SUCCESS.
+    Supports real-time cancellation during both Phase 1 and Phase 2.
     """
     await websocket.accept()
     logger.info("WebSocket connection established.")
@@ -487,6 +518,8 @@ async def websocket_process_endpoint(websocket: WebSocket):
             await websocket.send_text(json.dumps(data, ensure_ascii=False))
         except Exception as err:
             logger.warning(f"Error sending message over WebSocket: {err}")
+
+    task_id = ""
 
     try:
         # Phase 1: Wait for initial message with task_id
@@ -501,9 +534,37 @@ async def websocket_process_endpoint(websocket: WebSocket):
             return
 
         pipeline = VideoRepurposePipeline(task_id=task_id, emitter=ws_emitter)
+        active_pipelines[task_id] = pipeline
 
-        # Run Phase 1
-        await pipeline.run_phase_1()
+        # Run Phase 1 with concurrent cancellation listener
+        phase1_task = asyncio.create_task(pipeline.run_phase_1())
+
+        while not phase1_task.done():
+            recv_task = asyncio.create_task(websocket.receive_text())
+            done, pending = await asyncio.wait(
+                [phase1_task, recv_task],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+
+            if recv_task in done:
+                try:
+                    client_msg_raw = recv_task.result()
+                    client_msg = json.loads(client_msg_raw)
+                    if client_msg.get("action") == "CANCEL":
+                        pipeline.cancel()
+                        phase1_task.cancel()
+                        break
+                except Exception:
+                    pass
+            else:
+                recv_task.cancel()
+
+        if pipeline._cancelled:
+            await ws_emitter({"status": "CANCELLED", "message": "Đã hủy tiến trình theo yêu cầu người dùng."})
+            return
+
+        if phase1_task.done() and not phase1_task.cancelled() and phase1_task.exception():
+            raise phase1_task.exception()
 
         # Phase 2: Await user review/script confirmation (allows re-rendering)
         while True:
@@ -514,10 +575,34 @@ async def websocket_process_endpoint(websocket: WebSocket):
             if action == "RESUME_WITH_SCRIPT":
                 edited_srt = client_msg.get("edited_srt", "")
                 sub_style = client_msg.get("sub_style", {})
-                await pipeline.run_phase_2(edited_srt=edited_srt, sub_style=sub_style)
-                # Keep loop alive so user can review and re-render if needed
+
+                phase2_task = asyncio.create_task(pipeline.run_phase_2(edited_srt=edited_srt, sub_style=sub_style))
+                while not phase2_task.done():
+                    recv_task = asyncio.create_task(websocket.receive_text())
+                    done, pending = await asyncio.wait(
+                        [phase2_task, recv_task],
+                        return_when=asyncio.FIRST_COMPLETED
+                    )
+                    if recv_task in done:
+                        try:
+                            msg_raw = recv_task.result()
+                            msg_data = json.loads(msg_raw)
+                            if msg_data.get("action") == "CANCEL":
+                                pipeline.cancel()
+                                phase2_task.cancel()
+                                break
+                        except Exception:
+                            pass
+                    else:
+                        recv_task.cancel()
+
+                if pipeline._cancelled:
+                    await ws_emitter({"status": "CANCELLED", "message": "Đã hủy tiến trình theo yêu cầu người dùng."})
+                    break
+
             elif action == "CANCEL":
-                await ws_emitter({"status": "CANCELLED", "message": "Đã hủy tác vụ theo yêu cầu người dùng."})
+                pipeline.cancel()
+                await ws_emitter({"status": "CANCELLED", "message": "Đã hủy tiến trình theo yêu cầu người dùng."})
                 break
             else:
                 await ws_emitter({"status": "WARNING", "message": f"Hành động không xác định: {action}"})
@@ -531,6 +616,8 @@ async def websocket_process_endpoint(websocket: WebSocket):
         except Exception:
             pass
     finally:
+        if task_id and task_id in active_pipelines:
+            active_pipelines.pop(task_id, None)
         try:
             await websocket.close()
         except Exception:

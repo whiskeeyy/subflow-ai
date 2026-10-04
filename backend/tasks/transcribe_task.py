@@ -1,7 +1,7 @@
 import os
 import logging
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Callable
 from faster_whisper import WhisperModel
 from backend.settings_manager import settings_manager
 from backend.model_downloader import model_downloader
@@ -97,10 +97,13 @@ def format_time(seconds: float) -> str:
 def transcribe_audio(
     audio_path: str,
     api_key: Optional[str] = None,
-    output_srt_path: Optional[str] = None
-) -> str:
+    output_srt_path: Optional[str] = None,
+    progress_callback: Optional[Callable[[float, float, str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None
+) -> Tuple[str, float]:
     """
-    Transcribes audio locally using faster-whisper and returns a valid SRT string.
+    Transcribes audio locally using faster-whisper and returns a tuple (srt_content, duration_seconds).
+    Emits granular real-time progress callbacks and supports instantaneous cancellation.
     Language is loaded dynamically from settings (defaults to 'zh').
     """
     path = Path(audio_path)
@@ -113,11 +116,16 @@ def transcribe_audio(
 
     # Transcribe speech with configured language
     segments, info = model.transcribe(str(path), language=lang)
+    total_duration = float(info.duration) if info and info.duration else 0.0
 
     srt_entries = []
     index = 1
 
     for segment in segments:
+        if cancel_check and cancel_check():
+            logger.info("Transcribe cancelled by user.")
+            raise RuntimeError("Tác vụ nhận diện giọng nói đã bị người dùng hủy bỏ.")
+
         text = segment.text.strip()
         if not text:
             continue
@@ -129,6 +137,12 @@ def transcribe_audio(
         srt_entries.append(entry)
         index += 1
 
+        if progress_callback and total_duration > 0:
+            progress_callback(segment.end, total_duration, text)
+
+    if cancel_check and cancel_check():
+        raise RuntimeError("Tác vụ nhận diện giọng nói đã bị người dùng hủy bỏ.")
+
     srt_content = "\n".join(srt_entries).strip()
     if srt_content:
         srt_content += "\n"
@@ -138,4 +152,4 @@ def transcribe_audio(
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(srt_content, encoding="utf-8")
 
-    return srt_content
+    return srt_content, total_duration

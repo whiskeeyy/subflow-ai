@@ -6,6 +6,7 @@ import { initHistoryDrawer } from './history.js';
 import { initBatchQueue } from './batch.js';
 import { initSettings, openSettingsModal } from './settings.js';
 import { initWizard } from './wizard.js';
+import { showToast, showErrorModal, showConfirmModal } from './ui_dialog.js';
 
 // --- State ---
 let cues = [];
@@ -31,6 +32,11 @@ const progressSection = $('progressSection');
 const progressBar = $('progressBar');
 const progressPercent = $('progressPercent');
 const progressStepLabel = $('progressStepLabel');
+const btnCancelTask = $('btnCancelTask');
+const btnResetWorkspace = $('btnResetWorkspace');
+const progressLiveText = $('progressLiveText');
+const progressMetricTime = $('progressMetricTime');
+const progressMetricSpeed = $('progressMetricSpeed');
 const srtEditorSection = $('srtEditorSection');
 const previewVideoWrapper = $('previewVideoWrapper');
 const previewPlayer = $('previewPlayer');
@@ -95,10 +101,42 @@ function updateConnectionStatus(state) {
   else connectionStatus.innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-500"></span><span class="text-slate-400">Chưa kết nối</span>`;
 }
 
-function updateProgress(percent, message) {
+function updateProgress(percent, message, liveText = '', metrics = null) {
   progressBar.style.width = `${percent}%`;
   progressPercent.textContent = `${percent}%`;
   if (message) progressStepLabel.textContent = message;
+
+  if (progressLiveText) {
+    if (liveText && liveText.trim()) {
+      progressLiveText.textContent = `"${liveText.trim()}"`;
+      progressLiveText.classList.remove('opacity-50');
+    } else if (percent >= 100) {
+      progressLiveText.textContent = 'Đã hoàn tất toàn bộ quy trình!';
+    } else {
+      progressLiveText.textContent = 'Đang xử lý luồng AI trong nền...';
+      progressLiveText.classList.add('opacity-50');
+    }
+  }
+
+  if (metrics) {
+    if (progressMetricTime && metrics.time) {
+      progressMetricTime.textContent = metrics.time;
+      progressMetricTime.classList.remove('hidden');
+    }
+    if (progressMetricSpeed) {
+      let speedStr = '';
+      if (metrics.fps && metrics.fps !== '0') speedStr += `${metrics.fps} FPS `;
+      if (metrics.speed && metrics.speed !== '0') speedStr += `• ${metrics.speed}`;
+      if (metrics.eta_seconds && metrics.eta_seconds > 0) speedStr += ` • ~${Math.round(metrics.eta_seconds)}s`;
+      if (speedStr.trim()) {
+        progressMetricSpeed.textContent = speedStr.trim();
+        progressMetricSpeed.classList.remove('hidden');
+      } else if (metrics.completed_cues && metrics.total_cues) {
+        progressMetricSpeed.textContent = `${metrics.completed_cues}/${metrics.total_cues} câu`;
+        progressMetricSpeed.classList.remove('hidden');
+      }
+    }
+  }
 }
 
 function setProcessingState(isProcessing) {
@@ -146,7 +184,7 @@ const { renderCueCards, updateSubOverlayStyle, getIsRawMode } = initEditor({
   syncLiveOverlay
 });
 
-const { connectWebSocket, sendPhase2 } = initPipeline({
+const { connectWebSocket, sendPhase2, cancelPipeline } = initPipeline({
   appendLog, updateProgress, setProcessingState, setSubmittingState, updateConnectionStatus,
   getCues: () => cues,
   setCues: (c) => { cues = c; },
@@ -156,6 +194,37 @@ const { connectWebSocket, sendPhase2 } = initPipeline({
   setCurrentTaskId: (id) => { currentTaskId = id; },
   getCurrentTaskId: () => currentTaskId,
   setOriginalAiSrt: (srt) => { originalAiSrt = srt; }
+});
+
+// --- Active Task Control: Cancel & Reset Workspace ---
+btnCancelTask?.addEventListener('click', async () => {
+  const confirmed = await showConfirmModal({
+    title: 'Hủy tác vụ đang chạy',
+    message: 'Bạn có chắc chắn muốn hủy tiến trình hiện tại không? Mọi tài nguyên CPU/GPU và tiến trình AI sẽ được dừng lại ngay lập tức.',
+    confirmText: 'Dừng tiến trình',
+    cancelText: 'Tiếp tục chạy',
+    isDanger: true
+  });
+  if (confirmed) {
+    await cancelPipeline();
+  }
+});
+
+btnResetWorkspace?.addEventListener('click', () => {
+  selectedFile = null;
+  if (videoFileInput) videoFileInput.value = '';
+  fileSelectedBadge.classList.add('hidden');
+  progressSection.classList.add('hidden');
+  srtEditorSection.classList.add('hidden');
+  resultCard.classList.add('hidden');
+  setProcessingState(false);
+  try { previewPlayer.pause(); previewPlayer.src = ''; } catch(e) {}
+  try { finalVideoPlayer.pause(); finalVideoPlayer.src = ''; } catch(e) {}
+  cues = [];
+  originalAiSrt = '';
+  updateProgress(0, 'Sẵn sàng');
+  appendLog('Đã đặt lại toàn bộ không gian làm việc.', 'system');
+  showToast('Đã làm mới không gian làm việc!', 'info');
 });
 
 initHistoryDrawer();
@@ -365,7 +434,7 @@ videoFileInput.addEventListener('change', (e) => {
 
 function handleFileSelect(file) {
   if (!file.type.startsWith('video/') && !file.name.toLowerCase().endsWith('.mp4')) {
-    alert('Vui lòng chọn tệp video hợp lệ (.mp4)');
+    showToast('Vui lòng chọn tệp video hợp lệ (.mp4)', 'warning');
     return;
   }
   selectedFile = file;
@@ -374,17 +443,18 @@ function handleFileSelect(file) {
   selectedFileSize.textContent = `(${sizeMb} MB)`;
   fileSelectedBadge.classList.remove('hidden');
   appendLog(`Đã chọn: ${file.name} (${sizeMb} MB)`, 'info');
+  showToast(`Đã chọn: ${file.name} (${sizeMb} MB)`, 'info', 2500);
 }
 
 // --- Start Pipeline ---
 btnStart.addEventListener('click', async () => {
   if (!selectedFile) {
-    alert('Vui lòng chọn tệp video trước!');
+    showToast('Vui lòng chọn tệp video trước!', 'warning');
     videoFileInput.click();
     return;
   }
   setProcessingState(true);
-  updateProgress(5, 'Đang tải lên máy chủ...');
+  updateProgress(5, 'Đang tải lên máy chủ...', 'Đang gửi tệp video lên backend...');
   srtEditorSection.classList.add('hidden');
   resultCard.classList.add('hidden');
   appendLog(`Bắt đầu tải: ${selectedFile.name}...`, 'system');
@@ -398,11 +468,15 @@ btnStart.addEventListener('click', async () => {
     }
     const { task_id } = await res.json();
     appendLog(`Upload thành công! Task: ${task_id}`, 'success');
-    updateProgress(10, 'Video đã lưu. Bắt đầu pipeline...');
+    updateProgress(10, 'Video đã lưu. Bắt đầu pipeline...', 'Đang chuẩn bị mô hình AI...');
     connectWebSocket(task_id);
   } catch(err) {
     appendLog(`Lỗi upload: ${err.message}`, 'error');
-    alert(`Lỗi: ${err.message}`);
+    showErrorModal({
+      title: 'Tải video lên thất bại',
+      message: err.message,
+      suggestion: 'Đảm bảo tệp không bị khóa bởi ứng dụng khác và có dung lượng hợp lệ.'
+    });
     setProcessingState(false);
     updateConnectionStatus('ready');
   }
@@ -413,7 +487,7 @@ btnConfirmSrt.addEventListener('click', async () => {
   if (btnConfirmSrt.disabled) return;
   if (getIsRawMode()) cues = parseSRT(srtTextarea.value);
   if (!cues.length) {
-    alert('Nội dung phụ đề không được để trống.');
+    showToast('Nội dung phụ đề không được để trống.', 'warning');
     return;
   }
   
@@ -454,13 +528,12 @@ btnConfirmSrt.addEventListener('click', async () => {
       if (!res.ok) throw new Error(data.detail || 'Lỗi gửi lệnh nhúng');
 
       appendLog(`Đã gửi lệnh nhúng phụ đề cho "${currentTaskTitle || currentTaskId}"! Video đang được xử lý trong danh sách hàng đợi.`, 'success');
+      showToast(`Đã bắt đầu nhúng phụ đề cho "${currentTaskTitle || currentTaskId}"!`, 'success');
       
       if (typeof fetchBatchStatus === 'function') fetchBatchStatus();
 
-      // Mở khóa nút bấm để user có thể tiếp tục thao tác
       setSubmittingState(false, true);
 
-      // Gợi ý video tiếp theo nếu có video chờ duyệt
       const nextWaiting = allBatchTasks.find(t => t.status === 'waiting_review' && t.task_id !== currentTaskId);
       if (nextWaiting) {
         appendLog(`Gợi ý: Video "${nextWaiting.filename}" đang chờ duyệt kịch bản. Bạn có thể bấm "Duyệt & Xem trước" ở trên để chỉnh sửa ngay!`, 'info');
@@ -468,19 +541,25 @@ btnConfirmSrt.addEventListener('click', async () => {
     } catch(err) {
       setSubmittingState(false);
       appendLog(`Lỗi: ${err.message}`, 'error');
-      alert(`Đã xảy ra lỗi: ${err.message}`);
+      showErrorModal({
+        title: 'Lỗi nhúng phụ đề',
+        message: err.message
+      });
     }
   } else {
     // Single upload WebSocket flow
     setSubmittingState(true);
     appendLog(`Nhúng phụ đề (${cues.length} câu) - Font: ${assFontSize}px, Lề: ${marginPercent}%...`, 'system');
-    updateProgress(80, 'Đang nhúng phụ đề bằng FFmpeg...');
+    updateProgress(80, 'Đang nhúng phụ đề bằng FFmpeg...', 'Bắt đầu luồng mã hóa video...');
     try {
       await sendPhase2(editedSrt, subStyle);
     } catch(err) {
       setSubmittingState(false);
       appendLog(`Lỗi: ${err.message}`, 'error');
-      alert(`Đã xảy ra lỗi: ${err.message}`);
+      showErrorModal({
+        title: 'Lỗi nhúng phụ đề',
+        message: err.message
+      });
       setProcessingState(false);
     }
   }

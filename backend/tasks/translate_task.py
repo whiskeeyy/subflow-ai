@@ -1,8 +1,8 @@
 import re
 import requests
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 from openai import OpenAI
 
 
@@ -46,12 +46,18 @@ def translate_single_text_gtx(text: str) -> str:
     return text.strip()
 
 
-def translate_srt_free_google(chinese_srt: str, output_srt_path: Optional[str] = None) -> str:
+def translate_srt_free_google(
+    chinese_srt: str,
+    output_srt_path: Optional[str] = None,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None
+) -> str:
     """
     Free translation engine:
     Parses SRT blocks, translates subtitle texts in parallel,
     and reconstructs the exact original SRT timestamps and sequence numbers.
     100% free, 0 API key required, 100% timestamp preservation.
+    Supports real-time completed count progress and instantaneous cancellation.
     """
     if not chinese_srt.strip():
         raise ValueError("Nội dung phụ đề tiếng Trung (SRT) bị trống.")
@@ -70,9 +76,30 @@ def translate_srt_free_google(chinese_srt: str, output_srt_path: Optional[str] =
         for m in matches
     ]
 
-    # Parallel translation for high speed
+    total_blocks = len(parsed_blocks)
+    translated_texts = [""] * total_blocks
+
+    # Parallel translation for high speed with granular progress
     with ThreadPoolExecutor(max_workers=5) as executor:
-        translated_texts = list(executor.map(translate_single_text_gtx, [b[2] for b in parsed_blocks]))
+        future_to_idx = {
+            executor.submit(translate_single_text_gtx, block[2]): idx
+            for idx, block in enumerate(parsed_blocks)
+        }
+        completed = 0
+        for future in as_completed(future_to_idx):
+            if cancel_check and cancel_check():
+                raise RuntimeError("Tác vụ dịch thuật đã bị người dùng hủy bỏ.")
+            idx = future_to_idx[future]
+            try:
+                translated_texts[idx] = future.result()
+            except Exception:
+                translated_texts[idx] = parsed_blocks[idx][2]
+            completed += 1
+            if progress_callback:
+                progress_callback(completed, total_blocks)
+
+    if cancel_check and cancel_check():
+        raise RuntimeError("Tác vụ dịch thuật đã bị người dùng hủy bỏ.")
 
     result_entries = []
     for (idx, time_range, _), trans_text in zip(parsed_blocks, translated_texts):
@@ -132,12 +159,15 @@ def translate_srt_to_vietnamese(
     chinese_srt: str,
     api_key: Optional[str] = None,
     output_srt_path: Optional[str] = None,
-    prefer_openai: bool = False
+    prefer_openai: bool = False,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None
 ) -> str:
     """
     Main Translation Dispatcher:
     - Default: Free Google Translate (0 cost, no API keys, preserves 100% of timestamps).
     - If prefer_openai is True and a valid key exists, attempts GPT-4o-mini with automatic fallback.
+    - Emits granular real-time progress callbacks and supports instantaneous cancellation.
     """
     if prefer_openai and api_key and api_key.startswith("sk-"):
         try:
@@ -145,4 +175,9 @@ def translate_srt_to_vietnamese(
         except Exception as e:
             print(f"[TRANSLATE] OpenAI error: {e}. Falling back to Free Google Translate...")
 
-    return translate_srt_free_google(chinese_srt, output_srt_path)
+    return translate_srt_free_google(
+        chinese_srt,
+        output_srt_path,
+        progress_callback=progress_callback,
+        cancel_check=cancel_check
+    )
