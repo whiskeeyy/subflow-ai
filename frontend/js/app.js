@@ -1,10 +1,10 @@
-// frontend/js/app.js — Main entry point (ES Module)
 import { parseSRT, serializeCuesToSRT, hexToAssBgr, downloadBlob } from './utils.js';
 import { initPlayer } from './player.js';
 import { initEditor } from './editor.js';
 import { initPipeline } from './pipeline.js';
 import { initHistoryDrawer } from './history.js';
 import { initBatchQueue } from './batch.js';
+import { initSettings, openSettingsModal } from './settings.js';
 
 // --- State ---
 let cues = [];
@@ -14,6 +14,7 @@ let currentTaskTitle = '';
 let lastActiveCueId = null;
 let selectedFile = null;
 let lastOutputDir = '';
+let currentWorkspaceTab = 'single';
 
 // --- DOM Elements ---
 const $ = id => document.getElementById(id);
@@ -60,6 +61,17 @@ const btnOpenFolder = $('btnOpenFolder');
 const terminalLogs = $('terminalLogs');
 const btnClearLog = $('btnClearLog');
 const connectionStatus = $('connectionStatus');
+
+// --- Navbar & Workspace DOM Elements ---
+const tabBtnSingle = $('tabBtnSingle');
+const tabBtnBatch = $('tabBtnBatch');
+const singleWorkflowSection = $('singleWorkflowSection');
+const batchWorkflowSection = $('batchWorkflowSection');
+const batchDropzone = $('batchDropzone');
+const batchFileInput = $('batchFileInput');
+const btnNavOpenFolder = $('btnNavOpenFolder');
+const btnNavSettings = $('btnNavSettings');
+const hwStatusPill = $('hwStatusPill');
 
 // --- Helpers ---
 function appendLog(message, type = 'info') {
@@ -185,6 +197,84 @@ const {
 
 startBatchPolling();
 
+// --- Workspace Switching ---
+function switchWorkspace(tab) {
+  currentWorkspaceTab = tab;
+  if (tab === 'single') {
+    singleWorkflowSection?.classList.remove('hidden');
+    batchWorkflowSection?.classList.add('hidden');
+    tabBtnSingle?.classList.add('bg-slate-800', 'text-white', 'font-semibold', 'border-slate-700', 'shadow-sm');
+    tabBtnSingle?.classList.remove('text-slate-400');
+    tabBtnBatch?.classList.remove('bg-slate-800', 'text-white', 'font-semibold', 'border-slate-700', 'shadow-sm');
+    tabBtnBatch?.classList.add('text-slate-400');
+  } else if (tab === 'batch') {
+    batchWorkflowSection?.classList.remove('hidden');
+    singleWorkflowSection?.classList.add('hidden');
+    tabBtnBatch?.classList.add('bg-slate-800', 'text-white', 'font-semibold', 'border-slate-700', 'shadow-sm');
+    tabBtnBatch?.classList.remove('text-slate-400');
+    tabBtnSingle?.classList.remove('bg-slate-800', 'text-white', 'font-semibold', 'border-slate-700', 'shadow-sm');
+    tabBtnSingle?.classList.add('text-slate-400');
+    startBatchPolling();
+  }
+}
+
+tabBtnSingle?.addEventListener('click', () => switchWorkspace('single'));
+tabBtnBatch?.addEventListener('click', () => switchWorkspace('batch'));
+
+// Batch Dropzone Listeners
+batchDropzone?.addEventListener('click', () => batchFileInput?.click());
+batchDropzone?.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  batchDropzone.classList.add('border-indigo-500', 'bg-indigo-500/5');
+});
+batchDropzone?.addEventListener('dragleave', () => {
+  batchDropzone.classList.remove('border-indigo-500', 'bg-indigo-500/5');
+});
+batchDropzone?.addEventListener('drop', (e) => {
+  e.preventDefault();
+  batchDropzone.classList.remove('border-indigo-500', 'bg-indigo-500/5');
+  if (e.dataTransfer.files?.length) {
+    uploadBatchFiles(e.dataTransfer.files);
+  }
+});
+batchFileInput?.addEventListener('change', (e) => {
+  if (e.target.files?.length) {
+    uploadBatchFiles(e.target.files);
+  }
+});
+
+// --- Initialize Settings Center ---
+const { getSettings } = initSettings({
+  onSettingsUpdated: (newSettings) => {
+    appendLog('Cấu hình hệ thống đã được cập nhật thành công.', 'success');
+    if (newSettings?.subtitle_preset) {
+      const p = newSettings.subtitle_preset;
+      if (p.font_size && subFontSizeSlider) {
+        subFontSizeSlider.value = p.font_size;
+        if (subFontSizeVal) subFontSizeVal.textContent = `${p.font_size}px`;
+      }
+      updateSubOverlayStyle();
+    }
+  }
+});
+
+// Quick Navbar button bindings
+hwStatusPill?.addEventListener('click', () => openSettingsModal('hardware'));
+btnNavOpenFolder?.addEventListener('click', async () => {
+  try {
+    const s = getSettings();
+    const outDir = s?.storage?.output_dir || lastOutputDir || 'outputs';
+    const res = await fetch(`/api/open-folder?path=${encodeURIComponent(outDir)}`);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail);
+    }
+    appendLog(`Đã mở thư mục lưu trữ: ${outDir}`, 'success');
+  } catch (err) {
+    appendLog(`Lỗi mở thư mục: ${err.message}`, 'error');
+  }
+});
+
 // --- Event: pipeline:action_required ---
 window.addEventListener('pipeline:action_required', (e) => {
   const data = e.detail;
@@ -247,6 +337,7 @@ dropzone.addEventListener('drop', (e) => {
   dropzone.classList.remove('border-indigo-500', 'bg-indigo-500/5');
   if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
     if (e.dataTransfer.files.length > 1) {
+      switchWorkspace('batch');
       uploadBatchFiles(e.dataTransfer.files);
     } else {
       handleFileSelect(e.dataTransfer.files[0]);
@@ -256,6 +347,7 @@ dropzone.addEventListener('drop', (e) => {
 videoFileInput.addEventListener('change', (e) => {
   if (e.target.files && e.target.files.length > 0) {
     if (e.target.files.length > 1) {
+      switchWorkspace('batch');
       uploadBatchFiles(e.target.files);
     } else {
       handleFileSelect(e.target.files[0]);
